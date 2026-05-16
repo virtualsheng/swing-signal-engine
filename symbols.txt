@@ -1,0 +1,47 @@
+# Swing signal engine — all tradeable symbols across accounts
+# Rollover IRA (ETFs)
+DBC
+DBMF
+DRAM
+EWJV
+EWT
+EWY
+GDE
+GLDM
+GRID
+IBIT
+NANR
+PSLV
+QQQM
+REMX
+SMH
+SPMO
+UFO
+URA
+
+# Roth IRA (stocks)
+AG
+AMAT
+ARIS
+GEV
+JPM
+LRCX
+MU
+NVDA
+PAAS
+PLTR
+RKLB
+SNDK
+TSM
+
+# HSA (ETFs)
+AVUV
+GDE
+VUG
+
+# 401(k) — monitored but no signals generated
+# JLGMX
+# FSSNX
+# FXAIX
+# FSGGX
+# FSMDX
