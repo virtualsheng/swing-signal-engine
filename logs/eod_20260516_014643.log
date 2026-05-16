@@ -1,0 +1,148 @@
+2026-05-16 01:46:43,764 | INFO | === EOD Signal Engine — 4:15 PM ===
+2026-05-16 01:46:43,765 | INFO | Portfolio: $753,814
+2026-05-16 01:46:55,819 | INFO | Ollama: unavailable
+2026-05-16 01:46:55,819 | INFO | Fetching data for 34 symbols...
+2026-05-16 01:47:05,162 | INFO | Data: 34/34 symbols fetched
+2026-05-16 01:48:07,251 | INFO | Regime: trending_up | bullish
+2026-05-16 01:48:07,252 | INFO | 
+Processing: Rollover IRA
+2026-05-16 01:48:07,252 | INFO |   Rollover IRA: 18 symbols | $564,073
+2026-05-16 01:48:07,273 | INFO |     DBMF   BUY   cv= 83 AI=83% → OK
+2026-05-16 01:48:07,282 | INFO |     GRID   HOLD  cv= 45 AI=45% → OK
+2026-05-16 01:48:07,292 | INFO |     GDE    HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,305 | INFO |     SPMO   HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,323 | INFO |     SMH    HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,335 | INFO |     DRAM   SELL  cv= 75 AI=75% → OK
+2026-05-16 01:48:07,347 | INFO |     DBC    HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,356 | INFO |     NANR   HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,364 | INFO |     QQQM   HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,375 | INFO |     UFO    BUY   cv= 83 AI=83% → OK
+2026-05-16 01:48:07,386 | INFO |     EWJV   BUY   cv= 83 AI=83% → OK
+2026-05-16 01:48:07,397 | INFO |     GLDM   HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,403 | INFO |     EWT    HOLD  cv= 45 AI=45% → OK
+2026-05-16 01:48:07,422 | INFO |     EWY    HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,424 | INFO |     PSLV   SELL  cv= 66 AI=66% → OK
+2026-05-16 01:48:07,426 | INFO |     IBIT   SELL  cv= 79 AI=79% → OK
+2026-05-16 01:48:07,429 | INFO |     URA    HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,430 | INFO |     REMX   HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,430 | INFO | 
+Processing: ROTH IRA
+2026-05-16 01:48:07,431 | INFO |   ROTH IRA: 13 symbols | $180,914
+2026-05-16 01:48:07,432 | INFO |     TSM    HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,523 | INFO |     NVDA   BUY   cv= 83 AI=83% → OK
+2026-05-16 01:48:07,528 | INFO |     JPM    SELL  cv= 83 AI=83% → OK
+2026-05-16 01:48:07,530 | INFO |     MU     HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,614 | INFO |     AMAT   BUY   cv= 90 AI=90% → OK
+2026-05-16 01:48:07,618 | INFO |     SNDK   HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,622 | INFO |     ARIS   HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,624 | INFO |     PLTR   SELL  cv= 83 AI=83% → OK
+2026-05-16 01:48:07,626 | INFO |     LRCX   HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,628 | INFO |     AG     HOLD  cv= 42 AI=42% → OK
+2026-05-16 01:48:07,723 | INFO |     RKLB   BUY   cv= 75 AI=75% → OK
+2026-05-16 01:48:07,726 | INFO |     PAAS   HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,728 | INFO |     GEV    HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,728 | INFO | 
+Processing: Health Savings Account
+2026-05-16 01:48:07,729 | INFO |   Health Savings Account: 3 symbols | $6,798
+2026-05-16 01:48:07,731 | INFO |     GDE    HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:07,993 | ERROR | HTTP Error 404: {"quoteSummary":{"result":null,"error":{"code":"Not Found","description":"No fundamentals data found for symbol: VUG"}}}
+2026-05-16 01:48:07,993 | INFO |     VUG    BUY   cv= 75 AI=75% → OK
+2026-05-16 01:48:07,998 | INFO |     AVUV   HOLD  cv= 47 AI=47% → OK
+2026-05-16 01:48:08,004 | INFO | 
+════════════════════════════════════════════════════════════════
+  SWING SIGNALS — EOD — May 16, 2026 01:48 ET
+  Total portfolio: $753,814
+════════════════════════════════════════════════════════════════
+
+  TODAY'S P&L: $-22,723 (-3.01%)
+    Rollover IRA                 $   564,073  -15,631 (-2.77%)
+    ROTH IRA                     $   180,914  -6,955 (-3.84%)
+    Health Savings Account       $     6,798  -137 (-2.02%)
+    VAST DATA 401(K)             $     2,030  +0 (+0.00%)
+
+  MARKET REGIME: 📈 TRENDING_UP
+  SPY trending up
+
+────────────────────────────────────────────────────────────────
+  ROLLOVER IRA  —  $564,073
+────────────────────────────────────────────────────────────────
+  ⚡ ACTION REQUIRED:
+  🟢 DBMF   ████████░░  83  BUY          $   31.23 (-0.03% 1d)  → $33,844 (6.0%) [held 2000sh @ $30.46, +2.5%]
+  🟢 UFO    ████████░░  83  BUY          $   56.25 (-2.97% 1d)  → $33,844 (6.0%) [held 500sh @ $54.64, +3.0%]
+  🟢 EWJV   ████████░░  83  BUY          $   45.11 (-0.73% 1d)  → $33,844 (6.0%) [held 500sh @ $42.04, +7.3%]
+  🔴 IBIT   ███████░░░  79  SELL         $   44.82 (-2.92% 1d) [held 250sh @ $43.64, +2.7%]
+  🔴 DRAM   ███████░░░  75  SELL         $   51.10 (-5.00% 1d) [held 700sh @ $45.31, +12.8%]
+  🔴 PSLV   ██████░░░░  66  SELL         $   24.60 (-8.79% 1d) [held 500sh @ $27.24, -9.7%]
+
+  TECHNICAL SUMMARY:
+    DBMF   BUY   cv= 83 RSI= 63.8 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.0x 1d=-0.03%
+    UFO    BUY   cv= 83 RSI= 61.3 ▲SMA50  ▲SMA200  MACD=▲ Vol=0.9x 1d=-2.97%
+    EWJV   BUY   cv= 83 RSI= 61.3 ▲SMA50  ▲SMA200  MACD=▲ Vol=0.8x 1d=-0.73%
+    IBIT   SELL  cv= 79 RSI= 54.0 ▲SMA50  ▼SMA200  MACD=▼ Vol=1.1x 1d=-2.92%
+    DRAM   SELL  cv= 75 RSI= 68.8 ▼SMA50  ▼SMA200  MACD=▲ Vol=1.3x 1d=-5.00%
+    PSLV   SELL  cv= 66 RSI= 46.2 ▼SMA50  ▲SMA200  MACD=▲ Vol=2.0x 1d=-8.79%
+    GDE    HOLD  cv= 47 RSI= 49.2 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.2x 1d=-3.01%
+    GLDM   HOLD  cv= 47 RSI= 40.3 ▼SMA50  ▲SMA200  MACD=▲ Vol=1.2x 1d=-2.29%
+    EWY    HOLD  cv= 47 RSI= 58.9 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.3x 1d=-6.12%
+    REMX   HOLD  cv= 47 RSI= 43.6 ▲SMA50  ▲SMA200  MACD=▼ Vol=1.3x 1d=-3.28%
+    GRID   HOLD  cv= 45 RSI= 55.5 ▲SMA50  ▲SMA200  MACD=▼ Vol=0.9x 1d=-2.81%
+    EWT    HOLD  cv= 45 RSI= 58.0 ▲SMA50  ▲SMA200  MACD=▼ Vol=1.2x 1d=-4.40%
+    SPMO   HOLD  cv= 42 RSI= 66.9 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.1x 1d=-2.74%
+    SMH    HOLD  cv= 42 RSI= 66.1 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.3x 1d=-3.80%
+    DBC    HOLD  cv= 42 RSI= 61.1 ▲SMA50  ▲SMA200  MACD=▼ Vol=0.5x 1d=+0.13%
+    NANR   HOLD  cv= 42 RSI= 47.7 ▼SMA50  ▲SMA200  MACD=▲ Vol=1.3x 1d=-1.92%
+    QQQM   HOLD  cv= 42 RSI= 71.4 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.0x 1d=-1.51%
+    URA    HOLD  cv= 42 RSI= 40.9 ▼SMA50  ▲SMA200  MACD=▼ Vol=1.1x 1d=-4.90%
+
+────────────────────────────────────────────────────────────────
+  ROTH IRA  —  $180,914
+────────────────────────────────────────────────────────────────
+  ⚡ ACTION REQUIRED:
+  🟢 AMAT   █████████░  90  BUY          $  436.62 (-0.89% 1d)  → $18,996 (10.5%) [held 38sh @ $423.44, +3.1%]
+  🟢 NVDA   ████████░░  83  BUY          $  225.32 (-4.42% 1d)  → $10,855 (6.0%) [held 118sh @ $204.33, +10.3%]
+  🔴 JPM    ████████░░  83  SELL         $  297.81 (-0.70% 1d) [held 70sh @ $304.17, -2.1%]
+  🔴 PLTR   ████████░░  83  SELL         $  133.99 (+0.19% 1d) [held 70sh @ $135.65, -1.2%]
+  🟢 RKLB   ███████░░░  75  BUY          $  124.77 (-5.87% 1d)  → $6,513 (3.6%) [held 60sh @ $80.94, +54.1%]
+
+  TECHNICAL SUMMARY:
+    AMAT   BUY   cv= 90 RSI= 61.7 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.8x 1d=-0.89%
+    NVDA   BUY   cv= 83 RSI= 64.7 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.2x 1d=-4.42%
+    JPM    SELL  cv= 83 RSI= 41.7 ▼SMA50  ▼SMA200  MACD=▼ Vol=1.1x 1d=-0.70%
+    PLTR   SELL  cv= 83 RSI= 43.5 ▼SMA50  ▼SMA200  MACD=▼ Vol=0.7x 1d=+0.19%
+    RKLB   BUY   cv= 75 RSI= 70.8 ▲SMA50  ▲SMA200  MACD=▲ Vol=0.8x 1d=-5.87%
+    SNDK   HOLD  cv= 47 RSI= 65.5 ▲SMA50  ▲SMA200  MACD=▲ Vol=0.9x 1d=+1.80%
+    LRCX   HOLD  cv= 47 RSI= 57.1 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.0x 1d=-4.82%
+    PAAS   HOLD  cv= 47 RSI= 48.6 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.4x 1d=-7.68%
+    GEV    HOLD  cv= 47 RSI= 51.7 ▲SMA50  ▲SMA200  MACD=▼ Vol=0.9x 1d=-3.79%
+    TSM    HOLD  cv= 42 RSI= 56.3 ▲SMA50  ▲SMA200  MACD=▼ Vol=0.8x 1d=-3.20%
+    MU     HOLD  cv= 42 RSI= 66.3 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.0x 1d=-6.62%
+    ARIS   HOLD  cv= 42 RSI= 43.8 ▼SMA50  ▲SMA200  MACD=▲ Vol=0.9x 1d=-7.81%
+    AG     HOLD  cv= 42 RSI= 45.3 ▼SMA50  ▲SMA200  MACD=▲ Vol=1.3x 1d=-9.89%
+
+────────────────────────────────────────────────────────────────
+  HEALTH SAVINGS ACCOUNT  —  $6,798
+────────────────────────────────────────────────────────────────
+  ⚡ ACTION REQUIRED:
+  🟢 VUG    ███████░░░  75  BUY          $   87.43 (-1.20% 1d)  → $245 (3.6%) [held 30sh @ $73.02, +19.7%]
+
+  TECHNICAL SUMMARY:
+    VUG    BUY   cv= 75 RSI= 71.2 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.1x 1d=-1.20%
+    GDE    HOLD  cv= 47 RSI= 49.2 ▲SMA50  ▲SMA200  MACD=▲ Vol=1.2x 1d=-3.01%
+    AVUV   HOLD  cv= 47 RSI= 49.1 ▲SMA50  ▲SMA200  MACD=▼ Vol=1.0x 1d=-1.28%
+
+────────────────────────────────────────────────────────────────
+  MONITOR ONLY — 401(k):
+────────────────────────────────────────────────────────────────
+    JLGMX    $     599  @ $90.74
+    FSSNX    $     499  @ $34.96
+    FXAIX    $     326  @ $257.65
+    FSGGX    $     306  @ $20.57
+    FSMDX    $     300  @ $39.89
+
+════════════════════════════════════════════════════════════════
+  Execute manually in Fidelity. Not financial advice.
+════════════════════════════════════════════════════════════════
+2026-05-16 01:48:10,004 | INFO | Email sent: SWING SIGNAL: EOD 2026-05-16 — 12 signals for tomorrow
+2026-05-16 01:48:10,544 | WARNING | Telegram send failed: {"ok":false,"error_code":401,"description":"Unauthorized"}
+2026-05-16 01:48:11,113 | WARNING | Telegram send failed: {"ok":false,"error_code":401,"description":"Unauthorized"}
+2026-05-16 01:48:11,115 | INFO | EOD done. Log: logs/eod_20260516_014643.log
