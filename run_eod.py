@@ -72,6 +72,61 @@ def load_signal_log() -> dict:
         return {}
 
 
+# Account name → section header comment mapping in symbols.txt
+ACCOUNT_SECTION_MAP = {
+    "Rollover IRA":          "# Rollover IRA",
+    "ROTH IRA":              "# Roth IRA",
+    "Health Savings Account":"# HSA",
+    # 401k is commented out — no signals
+}
+
+def load_symbols_for_account(account_name: str) -> list[str]:
+    """
+    Read symbols.txt and return symbols for this account's section.
+    Sections are delimited by comment headers like:
+      # Rollover IRA (ETFs)
+      DBMF
+      GRID
+      ...
+      # Roth IRA (stocks)   ← next section starts here
+    If no section found, falls back to all non-commented symbols.
+    """
+    symbols_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "symbols.txt")
+    if not os.path.exists(symbols_file):
+        logger.warning(f"symbols.txt not found — falling back to portfolio positions")
+        return []
+
+    section_header = ACCOUNT_SECTION_MAP.get(account_name, "")
+    if not section_header:
+        return []  # 401k and unknown accounts get no symbols
+
+    with open(symbols_file) as f:
+        lines = f.readlines()
+
+    # Find the start of this account's section
+    start_idx = None
+    for i, line in enumerate(lines):
+        if line.strip().lower().startswith(section_header.lower()):
+            start_idx = i + 1
+            break
+
+    if start_idx is None:
+        logger.warning(f"No section '{section_header}' found in symbols.txt for {account_name}")
+        return []
+
+    # Collect symbols until the next section header or end of file
+    symbols = []
+    for line in lines[start_idx:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            break  # next section starts
+        symbols.append(stripped.upper())
+
+    return symbols
+
+
 def save_signal_log(log: dict):
     with open(SIGNAL_LOG_FILE, "w") as f:
         json.dump(log, f, indent=2, default=str)
@@ -93,33 +148,91 @@ def process_account(
     cooldown_days = account_config.get("cooldown_days", 60)
     force_sell_c  = account_config.get("force_sell_conviction", 85)
     asset_class   = account_config.get("asset_class", "etf")
-    symbols       = list(account_config.get("positions", {}).keys())
+    # Load symbols from symbols.txt (full watchlist) not just portfolio positions.
+    # portfolio.json is used only for position context (unrealized P&L, cooldown).
+    symbols = load_symbols_for_account(account_name)
+    if not symbols:
+        # Fallback to portfolio positions if symbols.txt section not found
+        symbols = list(account_config.get("positions", {}).keys())
+        logger.warning(f"  {account_name}: falling back to portfolio positions ({len(symbols)} symbols)")
+    else:
+        logger.info(f"  {account_name}: {len(symbols)} symbols from symbols.txt | ${acct_value:,.0f}")
 
-    logger.info(f"  {account_name}: {len(symbols)} symbols | ${acct_value:,.0f}")
-
+    # ── Step 1: run technical signals for all symbols (fast, no Ollama) ──────
+    tech_results = {}
     for symbol in symbols:
         if symbol not in bars:
             logger.debug(f"    {symbol}: no data")
             continue
+        tech_results[symbol] = get_technical_signal(symbol, bars[symbol])
 
-        df         = bars[symbol]
-        tech       = get_technical_signal(symbol, df)
+    # ── Step 2: AI grading — only for actionable signals ──────────────────────
+    # Skip Ollama for HOLD signals with conviction below min_conv — they won't
+    # appear in the report as actionable, so the AI grade doesn't matter.
+    # This cuts Ollama calls from 34 down to ~5–10 per run.
+    AI_GRADE_THRESHOLD = min_conv - 10  # grade anything with conviction ≥ this
+
+    def _grade(symbol):
+        tech      = tech_results[symbol]
+        signal    = tech["signal"]
+        conviction= tech["conviction"]
+        # Skip AI for low-conviction HOLDs — use instant fallback
+        needs_ai = (
+            ollama_ok and (
+                signal in ("BUY", "SELL", "STRONG_BUY", "STRONG_SELL") or
+                conviction >= AI_GRADE_THRESHOLD
+            )
+        )
+        if needs_ai:
+            return grade_swing_setup(
+                symbol=symbol, signal=signal, conviction=conviction,
+                price=tech["price"],
+                rsi=tech["rsi"], above_sma50=tech["above_sma50"],
+                above_sma200=tech["above_sma200"], vol_ratio=tech["vol_ratio"],
+                ema_cross=tech["ema_cross"], reason=tech["reason"],
+                recent_prices=bars[symbol]["close"].tail(25).tolist(),
+                portfolio_value=acct_value,
+            )
+        return {
+            "confidence": conviction / 100.0,
+            "size_mult":  1.0,
+            "action":     signal,
+            "reasoning":  "Low conviction HOLD — AI grading skipped.",
+        }
+
+    # Run AI grading in parallel (max 3 concurrent Ollama calls)
+    import concurrent.futures
+    ai_results = {}
+    grade_syms = list(tech_results.keys())
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        futures = {ex.submit(_grade, sym): sym for sym in grade_syms}
+        for fut in concurrent.futures.as_completed(futures):
+            sym = futures[fut]
+            try:
+                ai_results[sym] = fut.result(timeout=90)
+            except Exception as e:
+                logger.debug(f"    {sym}: AI grade failed — {e}")
+                tech = tech_results[sym]
+                ai_results[sym] = {
+                    "confidence": tech["conviction"] / 100.0,
+                    "size_mult": 1.0, "action": tech["signal"],
+                    "reasoning": "AI grade error — using fallback.",
+                }
+
+    ai_count = sum(1 for s in grade_syms
+                   if tech_results[s]["signal"] in ("BUY","SELL","STRONG_BUY","STRONG_SELL")
+                   or tech_results[s]["conviction"] >= AI_GRADE_THRESHOLD)
+    logger.info(f"    AI graded {ai_count}/{len(grade_syms)} symbols "
+                f"(skipped {len(grade_syms)-ai_count} low-conviction HOLDs)")
+
+    # ── Step 3: build signal entries ──────────────────────────────────────────
+    for symbol in grade_syms:
+        tech       = tech_results[symbol]
+        ai         = ai_results[symbol]
         signal     = tech["signal"]
         conviction = tech["conviction"]
         price      = tech["price"]
         held       = is_held_in(symbol, account_name, portfolio)
-
-        ai = grade_swing_setup(
-            symbol=symbol, signal=signal, conviction=conviction, price=price,
-            rsi=tech["rsi"], above_sma50=tech["above_sma50"],
-            above_sma200=tech["above_sma200"], vol_ratio=tech["vol_ratio"],
-            ema_cross=tech["ema_cross"], reason=tech["reason"],
-            recent_prices=df["close"].tail(25).tolist(),
-            portfolio_value=acct_value,
-        ) if ollama_ok else {
-            "confidence": conviction/100, "size_mult": 1.0,
-            "action": signal, "reasoning": "Ollama unavailable.",
-        }
 
         ai_confidence = ai["confidence"]
         ai_action     = ai.get("action", signal)
@@ -191,9 +304,14 @@ def process_account(
         }
         signals.append(entry)
         signal_log[f"{account_name}:{symbol}"] = entry
+        used_ai = (
+            signal in ("BUY","SELL","STRONG_BUY","STRONG_SELL") or
+            conviction >= AI_GRADE_THRESHOLD
+        ) and ollama_ok
         logger.info(
             f"    {symbol:6} {signal:5} cv={conviction:3d} "
-            f"AI={ai_confidence:.0%} → {'BLOCKED:'+blocked_by if blocked_by else 'OK'}"
+            f"{'AI' if used_ai else 'fb'}={ai_confidence:.0%} "
+            f"→ {'BLOCKED:'+blocked_by if blocked_by else 'OK'}"
         )
 
     return signals
@@ -216,13 +334,17 @@ def run():
     ollama_ok = check_ollama_available()
     logger.info(f"Ollama: {'ready' if ollama_ok else 'unavailable'}")
 
+    # Collect all symbols from symbols.txt (not just portfolio positions)
     all_symbols = set()
+    for acct_name in tradeable.keys():
+        all_symbols.update(load_symbols_for_account(acct_name))
+    # Fallback: also include portfolio positions in case symbols.txt is missing
     for acct_config in tradeable.values():
         all_symbols.update(acct_config.get("positions", {}).keys())
     all_symbols.add("SPY")
 
     logger.info(f"Fetching data for {len(all_symbols)} symbols...")
-    bars = fetch_batch(list(all_symbols), force=True)  # force fresh data at EOD
+    bars = fetch_batch(list(all_symbols))  # uses 60-min cache; re-fetches if stale
     logger.info(f"Data: {len(bars)}/{len(all_symbols)} symbols fetched")
 
     spy_closes = get_spy_closes(20)
