@@ -58,8 +58,8 @@
       "bear_score_val": 0.0,
       "net_score": 3.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 83/100.",
+    "narrative": "Technical analysis highlights a strong bullish trend with key support holding above $31.23, reinforcing the 83% confidence BUY signal. Initiate a swing trade with $33,844 (6.0% of portfolio) to capitalize on upward momentum, balancing conviction with diversified risk management.",
     "held": true,
     "shares": 2000.0,
     "avg_cost": 30.46,
@@ -128,7 +128,7 @@
       "bear_score_val": 3.0,
       "net_score": -1.0
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 300.0,
@@ -198,7 +198,7 @@
       "bear_score_val": 2.0,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 830.0,
@@ -268,7 +268,7 @@
       "bear_score_val": 1.0,
       "net_score": 1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 380.0,
@@ -338,7 +338,7 @@
       "bear_score_val": 1.0,
       "net_score": 1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 90.0,
@@ -408,8 +408,8 @@
       "bear_score_val": 3.0,
       "net_score": -2.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 75/100.",
+    "narrative": "DRAM shows bearish technical signals with key resistance at $51.10, suggesting a potential corrective decline. Sell the recommended $20,307 position (3.6% of portfolio) to lock in gains amid moderate conviction and fallback analysis.",
     "held": true,
     "shares": 700.0,
     "avg_cost": 45.31,
@@ -478,7 +478,7 @@
       "bear_score_val": 0.5,
       "net_score": 1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 1120.0,
@@ -548,7 +548,7 @@
       "bear_score_val": 3.0,
       "net_score": -1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 380.0,
@@ -618,7 +618,7 @@
       "bear_score_val": 1.0,
       "net_score": 1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 100.0,
@@ -688,8 +688,8 @@
       "bear_score_val": 0.0,
       "net_score": 3.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 83/100.",
+    "narrative": "Technical analysis indicates a bullish breakout with strong momentum, supported by key resistance levels being tested. Initiate a swing trade with the suggested $33,844 position (6.0% of portfolio) to capitalize on the high-confidence buy signal, leveraging technical strength and strategic allocation.",
     "held": true,
     "shares": 500.0,
     "avg_cost": 54.64,
@@ -758,8 +758,8 @@
       "bear_score_val": 0.0,
       "net_score": 3.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 83/100.",
+    "narrative": "Technical analysis indicates a strong bullish setup with key support broken and positive momentum confirming a swing trade opportunity. Enter a long position of $33,844 (6.0% of portfolio) to capitalize on the high conviction buy signal, leveraging the asset's technical strength as a fallback strategy amid limited AI model availability.",
     "held": true,
     "shares": 500.0,
     "avg_cost": 42.04,
@@ -828,7 +828,7 @@
       "bear_score_val": 2.0,
       "net_score": -0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 250.0,
@@ -898,7 +898,7 @@
       "bear_score_val": 3.0,
       "net_score": -1.0
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 200.0,
@@ -968,7 +968,7 @@
       "bear_score_val": 2.0,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 88.0,
@@ -1038,8 +1038,8 @@
       "bear_score_val": 3.5,
       "net_score": -2.0
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 66/100.",
+    "narrative": "Technical analysis indicates a bearish bias with key resistance levels tested and declining momentum at $24.60, suggesting a potential short-term reversal. Sell the $11,281 position (2.0% of portfolio) to lock in gains, leveraging the SELL signal and moderate conviction despite limited AI-driven insights.",
     "held": true,
     "shares": 500.0,
     "avg_cost": 27.24,
@@ -1108,8 +1108,8 @@
       "bear_score_val": 4.0,
       "net_score": -3.0
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 79/100.",
+    "narrative": "Technical analysis indicates bearish momentum with key resistance levels tested, suggesting a potential reversal near current price levels. Sell the $20,307 position (3.6% of portfolio) to lock in gains amid moderate confidence in the short-term downtrend, aligning with the 79/100 conviction rating.",
     "held": true,
     "shares": 250.0,
     "avg_cost": 43.64,
@@ -1178,7 +1178,7 @@
       "bear_score_val": 2.5,
       "net_score": -1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 200.0,
@@ -1248,7 +1248,7 @@
       "bear_score_val": 1.5,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 100.0,
@@ -1318,7 +1318,7 @@
       "bear_score_val": 0.5,
       "net_score": 1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 70.0,
@@ -1335,7 +1335,7 @@
     "asset_class": "stocks",
     "symbol": "NVDA",
     "signal": "BUY",
-    "ai_action": "BUY",
+    "ai_action": "STRONG_BUY",
     "conviction": 83,
     "ai_confidence": 0.83,
     "bear_score": 0,
@@ -1388,8 +1388,8 @@
       "bear_score_val": 0.0,
       "net_score": 3.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "NVDA shows strong bullish alignment with SMAs and EMA support, but RSI near overbought suggests caution. Volume ratio indicates healthy participation.",
+    "narrative": "NVDA exhibits strong bullish alignment with key SMAs and EMA support levels, though its near-overbought RSI suggests cautious optimism. Consider allocating $10,855 (6.0% of portfolio) to capitalize on the strong technical setup, with careful monitoring of RSI to manage overbought conditions.",
     "held": true,
     "shares": 118.0,
     "avg_cost": 204.33,
@@ -1458,8 +1458,8 @@
       "bear_score_val": 3.5,
       "net_score": -3.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 83/100.",
+    "narrative": "JPM showing sell signal with 83/100 conviction (AI: 83%). Consider reducing at $297.81 \u2014 Fallback (Ollama unavailable). Conviction: 83/100..",
     "held": true,
     "shares": 70.0,
     "avg_cost": 304.17,
@@ -1528,7 +1528,7 @@
       "bear_score_val": 1.0,
       "net_score": 1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 25.0,
@@ -1598,8 +1598,8 @@
       "bear_score_val": 0.0,
       "net_score": 4.0
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 90/100.",
+    "narrative": "Technical analysis indicates a strong breakout above key resistance, accompanied by elevated volume, signaling renewed bullish momentum. Enter a swing trade buying $18,996 of AMAT at $436.62 (10.5% of portfolio) with high conviction (90/100), leveraging the AI signal as a fallback strategy to capitalize on potential short-term upside.",
     "held": true,
     "shares": 38.0,
     "avg_cost": 423.44,
@@ -1668,7 +1668,7 @@
       "bear_score_val": 2.0,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 10.0,
@@ -1738,7 +1738,7 @@
       "bear_score_val": 3.0,
       "net_score": -1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 700.0,
@@ -1808,8 +1808,8 @@
       "bear_score_val": 3.5,
       "net_score": -3.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 83/100.",
+    "narrative": "PLTR showing sell signal with 83/100 conviction (AI: 83%). Consider reducing at $133.99 \u2014 Fallback (Ollama unavailable). Conviction: 83/100..",
     "held": true,
     "shares": 70.0,
     "avg_cost": 135.65,
@@ -1878,7 +1878,7 @@
       "bear_score_val": 2.0,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 28.0,
@@ -1948,7 +1948,7 @@
       "bear_score_val": 3.0,
       "net_score": -1.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 380.0,
@@ -2018,8 +2018,8 @@
       "bear_score_val": 1.0,
       "net_score": 2.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 75/100.",
+    "narrative": "RKLB showing buy signal with 75/100 conviction (AI: 75%). Consider entering at $124.77 \u2014 Fallback (Ollama unavailable). Conviction: 75/100..",
     "held": true,
     "shares": 60.0,
     "avg_cost": 80.94,
@@ -2088,7 +2088,7 @@
       "bear_score_val": 2.0,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 100.0,
@@ -2158,7 +2158,7 @@
       "bear_score_val": 2.5,
       "net_score": -0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 5.0,
@@ -2228,7 +2228,7 @@
       "bear_score_val": 2.0,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 42.0,
@@ -2298,8 +2298,8 @@
       "bear_score_val": 1.0,
       "net_score": 2.5
     },
-    "ai_reasoning": "Ollama unavailable.",
-    "narrative": "",
+    "ai_reasoning": "Fallback (Ollama unavailable). Conviction: 75/100.",
+    "narrative": "VUG showing buy signal with 75/100 conviction (AI: 75%). Consider entering at $87.43 \u2014 Fallback (Ollama unavailable). Conviction: 75/100..",
     "held": true,
     "shares": 30.0,
     "avg_cost": 73.02,
@@ -2368,7 +2368,7 @@
       "bear_score_val": 1.5,
       "net_score": 0.5
     },
-    "ai_reasoning": "Ollama unavailable.",
+    "ai_reasoning": "Low conviction HOLD \u2014 AI grading skipped.",
     "narrative": "",
     "held": true,
     "shares": 11.0,

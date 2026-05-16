@@ -1,4 +1,17 @@
-# Swing signal engine — all tradeable symbols across accounts
+# ─────────────────────────────────────────────────────────────────────────────
+# symbols.txt — Swing Signal Engine watchlist
+# ─────────────────────────────────────────────────────────────────────────────
+# Account assignment rules:
+#   Rollover IRA  → ETFs you want signals on (add/remove freely)
+#   Roth IRA      → Individual stocks (add/remove freely)
+#   HSA           → ETFs (small account — signals generated but rarely traded)
+#
+# To add a new watchlist symbol: just add it under the right section.
+# To stop getting signals on a symbol: comment it out with #
+# Portfolio positions (shares/avg cost) are in portfolio.json
+# Update portfolio.json by running: python update_portfolio.py <fidelity_csv>
+# ─────────────────────────────────────────────────────────────────────────────
+ 
 # Rollover IRA (ETFs)
 DBC
 DBMF
@@ -18,6 +31,9 @@ SMH
 SPMO
 UFO
 URA
+URNM
+GDMN
+SLVP
 
 # Roth IRA (stocks)
 AG
