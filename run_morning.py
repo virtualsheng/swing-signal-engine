@@ -318,10 +318,6 @@ def build_morning_html(
 
     # Earnings alerts
     earn_html = ""
-    # Expected move text section
-    if em_data:
-        lines.append(format_em_text(em_data))
-        lines.append("")
 
     if earnings_alerts:
         earn_rows = "".join(
@@ -580,6 +576,11 @@ def build_morning_text(
                     f"Your signal:{x.get('eod_signal','—'):12} ← REVIEW"
                 )
         lines.append(f"  Watch: {yt_analysis.get('url','')}")
+        lines.append("")
+
+    # Expected move section
+    if em_data:
+        lines.append(format_em_text(em_data))
         lines.append("")
 
     if earnings_alerts:
