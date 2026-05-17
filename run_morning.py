@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from signals.premarket_data  import get_premarket_batch, get_market_overview, gap_significance
+from signals.expected_move   import get_market_expected_moves, format_em_html, format_em_text
+from signals.youtube_fetcher import fetch_all_channels
 from signals.news_fetcher    import fetch_news_batch, sentiment_emoji
 from signals.earnings_filter import is_near_earnings
 from signals.portfolio       import load_portfolio, get_tradeable_accounts
@@ -106,7 +108,7 @@ Market overview (pre-market, 7:30 AM ET):
 Active EOD signals from last night (to be confirmed at open):
 {signal_lines or "  None"}
 
-Significant overnight gaps in your holdings:
+Pre-market moves in your holdings (genuine pre-market quotes only):
 {gap_lines}
 
 Key news sentiment:
@@ -151,6 +153,8 @@ def build_morning_html(
     earnings_alerts: list,
     morning_narrative: str,
     total_value: float,
+    yt_analyses: list = None,
+    em_data: dict = None,
 ) -> str:
     spy_gap = market_overview.get("spy", {}).get("gap_pct", 0)
     qqq_gap = market_overview.get("qqq", {}).get("gap_pct", 0)
@@ -216,7 +220,7 @@ def build_morning_html(
     gaps_section = f"""
     <div style="margin-bottom:20px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
       <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7">
-        <span style="font-weight:500">Overnight Gaps — Your Holdings</span>
+        <span style="font-weight:500" id="gap-section-title">Pre-Market Moves — Your Holdings</span>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:#F7F5EE">
@@ -226,7 +230,7 @@ def build_morning_html(
           <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:12px">EOD Signal</th>
           <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:12px">Account / Impact</th>
         </tr></thead>
-        <tbody>{gap_rows or "<tr><td colspan='5' style='padding:10px 8px;color:#888;font-size:13px'>No significant gaps overnight.</td></tr>"}</tbody>
+        <tbody>{gap_rows or "<tr><td colspan='5' style='padding:10px 8px;color:#888;font-size:13px'>No pre-market data available — market may be closed or pre-market not yet active.</td></tr>"}</tbody>
       </table>
     </div>"""
 
@@ -314,6 +318,11 @@ def build_morning_html(
 
     # Earnings alerts
     earn_html = ""
+    # Expected move text section
+    if em_data:
+        lines.append(format_em_text(em_data))
+        lines.append("")
+
     if earnings_alerts:
         earn_rows = "".join(
             f'<tr style="border-top:0.5px solid #E8E6DF">'
@@ -338,6 +347,149 @@ def build_morning_html(
           </table>
         </div>"""
 
+    # ── YouTube sections (one per channel) ───────────────────────────────────
+    yt_sections_html = ""
+    for yt_analysis in (yt_analyses or []):
+      if True:
+        bias_color = {"bullish":"#1D9E75","bearish":"#E24B4A",
+                      "neutral":"#888780","mixed":"#BA7517","unknown":"#888780"}.get(
+            yt_analysis.get("overall_bias","neutral"), "#888780")
+
+        # Price targets table
+        pts = yt_analysis.get("price_targets", [])
+        pt_rows = ""
+        for pt in pts:
+            sym = pt.get("symbol","")
+            tl  = pt.get("target_low");  th_v = pt.get("target_high")
+            sl  = pt.get("support");     rs   = pt.get("resistance")
+            er_l= pt.get("expected_range_low"); er_h = pt.get("expected_range_high")
+            tf  = pt.get("timeframe","")
+            notes = pt.get("notes","")[:60]
+            range_str = (f"${er_l:.2f}–${er_h:.2f}" if er_l and er_h else
+                         f"${tl:.2f}–${th_v:.2f}" if tl and th_v else "—")
+            pt_rows += f"""
+            <tr style="border-top:0.5px solid #E8E6DF">
+              <td style="padding:7px 8px;font-weight:500">{sym}</td>
+              <td style="padding:7px 8px;color:#1D9E75">{range_str}</td>
+              <td style="padding:7px 8px;color:#E24B4A">{f"${sl:.2f}" if sl else "—"}</td>
+              <td style="padding:7px 8px;color:#BA7517">{f"${rs:.2f}" if rs else "—"}</td>
+              <td style="padding:7px 8px;font-size:11px;color:#5F5E5A">{tf}</td>
+              <td style="padding:7px 8px;font-size:11px;color:#888">{notes}</td>
+            </tr>"""
+
+        pt_table = f"""
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:6px">Price Targets & Expected Ranges</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:#F7F5EE">
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Symbol</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Target/Range</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Support</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Resistance</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Timeframe</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Notes</th>
+            </tr></thead>
+            <tbody>{pt_rows}</tbody>
+          </table>
+        </div>""" if pt_rows else ""
+
+        # Cross-reference with your signals
+        cr = yt_analysis.get("cross_reference", [])
+        portfolio_cr = [x for x in cr if x["alignment"] != "not_in_portfolio"]
+        cr_rows = ""
+        for x in portfolio_cr:
+            align_color = {"aligned":"#1D9E75","conflict":"#E24B4A","neutral":"#888780"}.get(x["alignment"],"#888780")
+            align_icon  = {"aligned":"✅","conflict":"⚠️","neutral":"—"}.get(x["alignment"],"—")
+            sent_color  = {"bullish":"#1D9E75","bearish":"#E24B4A","cautious":"#BA7517","neutral":"#888780"}.get(x["yt_sentiment"],"#888780")
+            eod_color   = {"BUY":"#1D9E75","STRONG_BUY":"#1D9E75","SELL":"#E24B4A","STRONG_SELL":"#E24B4A"}.get(x.get("eod_signal",""),"#888780")
+            action      = x.get("action_mentioned","")
+            cr_rows += f"""
+            <tr style="border-top:0.5px solid #E8E6DF">
+              <td style="padding:7px 8px;font-weight:500">{x["symbol"]}</td>
+              <td style="padding:7px 8px;color:{sent_color}">{x["yt_sentiment"].title()}</td>
+              <td style="padding:7px 8px;font-size:11px;color:#888">{action}</td>
+              <td style="padding:7px 8px;font-size:12px;color:#5F5E5A">{x["yt_comment"][:65]}</td>
+              <td style="padding:7px 8px;color:{eod_color}">{x.get("eod_signal","—")}</td>
+              <td style="padding:7px 8px;color:{align_color};font-weight:500">{align_icon} {x["alignment"].replace("_"," ").title()}</td>
+            </tr>"""
+
+        cr_table = f"""
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:6px">Your Portfolio — Cross-Reference</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:#F7F5EE">
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Symbol</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">FOM View</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Action</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Comment</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Your Signal</th>
+              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Alignment</th>
+            </tr></thead>
+            <tbody>{cr_rows}</tbody>
+          </table>
+        </div>""" if cr_rows else "<p style='color:#888;font-size:13px'>No portfolio symbols mentioned.</p>"
+
+        week_outlook = yt_analysis.get("week_outlook","")
+
+        yt_sections_html += f"""
+        <div style="margin-bottom:20px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
+          <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;display:flex;align-items:center;gap:12px">
+            <span style="font-size:18px">📺</span>
+            <div>
+              <span style="font-weight:500;font-size:14px">{yt_analysis.get('channel','')}</span>
+              <span style="color:#5F5E5A;font-size:12px;margin-left:8px">{yt_analysis.get("published","")}</span>
+              <span style="color:{bias_color};font-weight:500;font-size:12px;margin-left:8px">
+                {yt_analysis.get("overall_bias","").title()} bias
+              </span>
+            </div>
+            <a href="{yt_analysis.get("url","")}" target="_blank"
+               style="margin-left:auto;font-size:12px;color:#4ca3ff;text-decoration:none">Watch ↗</a>
+          </div>
+          <div style="padding:12px 14px">
+            <p style="margin:0 0 10px;font-size:13px;font-style:italic;color:#2C2C2A;line-height:1.6">
+              {yt_analysis.get("summary","")}
+            </p>
+            {f'<p style="margin:0 0 10px;font-size:13px;color:#1D9E75"><strong>Week outlook:</strong> {week_outlook}</p>' if week_outlook else ""}
+            {pt_table}
+            {cr_table}
+          </div>
+        </div>"""
+
+    # ── Transcript appendix ───────────────────────────────────────────────────
+    transcripts_html = ""
+    for yt in (yt_analyses or []):
+        transcript = yt.get("transcript", "")
+        if not transcript:
+            continue
+        # Clean up transcript for display
+        # Split into paragraphs every ~300 words for readability
+        words = transcript.split()
+        chunks = []
+        for i in range(0, len(words), 300):
+            chunks.append(" ".join(words[i:i+300]))
+        chunk_html = "".join(
+            f'<p style="margin:0 0 12px;line-height:1.7">{c}</p>'
+            for c in chunks
+        )
+        transcripts_html += f"""
+        <div style="margin-bottom:24px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
+          <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;
+                      display:flex;align-items:center;gap:8px">
+            <span style="font-size:16px">📄</span>
+            <span style="font-weight:500;font-size:14px">Full Transcript — {yt.get('channel','')}</span>
+            <em style="font-weight:400;font-size:13px;color:#5F5E5A">"{yt.get('title','')}"</em>
+            <span style="margin-left:auto;font-size:11px;color:#888">{len(words):,} words</span>
+          </div>
+          <div style="padding:16px;font-size:12px;color:#2C2C2A;
+                      font-family:Georgia,serif;line-height:1.8;
+                      max-height:500px;overflow-y:auto;background:#FAFAF8">
+            {chunk_html}
+          </div>
+        </div>"""
+
+    # Expected move HTML section
+    em_section_html = format_em_html(em_data or {})
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:860px;margin:0 auto;padding:20px;color:#2C2C2A;background:#fff;font-size:14px}}</style>
@@ -348,11 +500,14 @@ def build_morning_html(
   <p style="margin:4px 0 0;font-size:12px;color:#888">Reading material — trade confirmations arrive at 9:50 AM in the Opening Report</p>
 </div>
 {overview_html}
+{em_section_html}
 {narrative_html}
+{yt_sections_html}
 {earn_html}
 {watchlist_section}
 {gaps_section}
 {news_section}
+{transcripts_html}
 <div style="border-top:0.5px solid #D3D1C7;padding-top:12px;margin-top:8px;font-size:11px;color:#888">
   Pre-market data is low-volume and may not reflect open prices. Wait for 9:50 AM opening report before executing.
 </div>
@@ -368,6 +523,8 @@ def build_morning_text(
     earnings_alerts: list,
     morning_narrative: str,
     total_value: float,
+    yt_analyses: list = None,
+    em_data: dict = None,
 ) -> str:
     spy_gap = market_overview.get("spy", {}).get("gap_pct", 0)
     qqq_gap = market_overview.get("qqq", {}).get("gap_pct", 0)
@@ -384,6 +541,46 @@ def build_morning_text(
         f"  {morning_narrative}",
         "",
     ]
+
+    # YouTube sections
+    for yt_analysis in (yt_analyses or []):
+      if not yt_analysis.get("error"):
+        bias = yt_analysis.get("overall_bias","?").upper()
+        lines += [
+            f"  📺 FIGURING OUT MONEY — {yt_analysis.get('published','')} | {bias} BIAS",
+            "  Title: " + yt_analysis.get("title",""),
+            f"  {yt_analysis.get('summary','')}",
+        ]
+        week = yt_analysis.get("week_outlook","")
+        if week:
+            lines.append(f"  Week: {week}")
+        pts = yt_analysis.get("price_targets",[])
+        if pts:
+            lines.append("  Price targets / expected ranges:")
+            for pt in pts:
+                sym  = pt.get("symbol","")
+                erl  = pt.get("expected_range_low") or pt.get("target_low")
+                erh  = pt.get("expected_range_high") or pt.get("target_high")
+                sup  = pt.get("support")
+                res  = pt.get("resistance")
+                tf   = pt.get("timeframe","")
+                rng  = f"${erl:.2f}–${erh:.2f}" if erl and erh else "—"
+                lines.append(
+                    f"    {sym:6} range={rng:15} "
+                    f"sup={f'${sup:.2f}' if sup else '—':8} "
+                    f"res={f'${res:.2f}' if res else '—':8} {tf}"
+                )
+        cr = yt_analysis.get("cross_reference",[])
+        conflicts = [x for x in cr if x["alignment"] == "conflict"]
+        if conflicts:
+            lines.append("  ⚠️  SIGNAL CONFLICTS vs your positions:")
+            for x in conflicts:
+                lines.append(
+                    f"    {x['symbol']:6} FOM:{x['yt_sentiment']:8} "
+                    f"Your signal:{x.get('eod_signal','—'):12} ← REVIEW"
+                )
+        lines.append(f"  Watch: {yt_analysis.get('url','')}")
+        lines.append("")
 
     if earnings_alerts:
         lines.append("  ⚠️ EARNINGS ALERTS (BUY blocked):")
@@ -405,7 +602,7 @@ def build_morning_text(
         lines.append("")
 
     if gap_alerts:
-        lines.append("  OVERNIGHT GAPS:")
+        lines.append("  PRE-MARKET MOVES:")
         for g in sorted(gap_alerts, key=lambda x: -abs(x["gap_pct"]))[:8]:
             lines.append(f"    {g['symbol']:6} {g['gap_pct']:+.1f}%  {g['gap_label']:12} [{g['account']}]")
         lines.append("")
@@ -432,14 +629,26 @@ def run():
     ollama_ok = check_ollama_available()
 
     # Collect all symbols across tradeable accounts
+    # Load symbols from symbols.txt (full watchlist), fall back to portfolio positions
+    from run_eod import load_symbols_for_account
     all_symbols    = set()
-    symbol_account = {}  # symbol → account_name
+    symbol_account = {}  # symbol → account_name (first account wins for shared symbols)
     symbol_class   = {}  # symbol → asset_class
     for acct_name, acct_cfg in tradeable.items():
+        syms = load_symbols_for_account(acct_name)
+        if not syms:
+            syms = list(acct_cfg.get("positions", {}).keys())
+        for sym in syms:
+            all_symbols.add(sym)
+            if sym not in symbol_account:  # first account wins
+                symbol_account[sym] = acct_name
+                symbol_class[sym]   = acct_cfg.get("asset_class", "etf")
+        # Also include portfolio positions (for position context)
         for sym in acct_cfg.get("positions", {}).keys():
             all_symbols.add(sym)
-            symbol_account[sym] = acct_name
-            symbol_class[sym]   = acct_cfg.get("asset_class", "etf")
+            if sym not in symbol_account:
+                symbol_account[sym] = acct_name
+                symbol_class[sym]   = acct_cfg.get("asset_class", "etf")
 
     logger.info(f"Portfolio: ${total_value:,.0f} | {len(all_symbols)} symbols")
 
@@ -471,17 +680,48 @@ def run():
     news_data = fetch_news_batch(news_syms)   # always fetch — keyword fallback if Ollama down
     logger.info(f"News fetched for {len(news_data)} symbols")
 
-    # Build gap alerts list
+    # ── Options implied expected move (SPY + QQQ) ────────────────────────────
+    logger.info("Fetching options expected moves...")
+    em_data = get_market_expected_moves()
+
+    # ── YouTube: FiguringOutMoney latest video ────────────────────────────────
+    logger.info("Checking YouTube channels for new videos...")
+    yt_analyses = []
+    if ollama_ok:
+        try:
+            yt_analyses = fetch_all_channels(
+                portfolio_symbols=list(all_symbols),
+                signal_log=load_signal_log(),
+            )
+            for yt in yt_analyses:
+                if not yt.get("error"):
+                    pts = yt.get("price_targets", [])
+                    logger.info(f"  📺 {yt['channel']}: '{yt['title']}' "
+                                f"— {yt.get('overall_bias','?')} bias "
+                                f"| {len(pts)} price target(s)")
+                else:
+                    logger.info(f"  📺 {yt['channel']}: '{yt['title']}' — transcript unavailable")
+            if not yt_analyses:
+                logger.info("  No new videos from any channel")
+        except Exception as e:
+            logger.warning(f"YouTube fetch failed: {e}")
+    else:
+        logger.info("YouTube analysis skipped (Ollama unavailable)")
+
+    # Build gap alerts list — only include genuine pre-market prices
+    # is_available=True means we got an actual pre-market quote, not just closing price
     gap_alerts = []
     for sym, q in premarket.items():
         gap = q.get("gap_pct", 0)
-        if abs(gap) >= 0.3:
+        # Only show if we have a real pre-market price AND it moved meaningfully
+        if abs(gap) >= 0.3 and q.get("is_available", False):
             eod_key = f"{symbol_account.get(sym,'')}:{sym}"
             eod_sig = signal_log.get(eod_key, {}).get("signal", "HOLD")
             gap_alerts.append({
                 "symbol":     sym,
                 "gap_pct":    gap,
                 "gap_label":  q.get("gap_label", "flat"),
+                "data_type":  q.get("data_type", "pre-market"),
                 "account":    symbol_account.get(sym, ""),
                 "asset_class": symbol_class.get(sym, "etf"),
                 "eod_signal": eod_sig,
@@ -536,10 +776,12 @@ def run():
     html_report = build_morning_html(
         today_str, market_ov, active_signals, gap_alerts,
         news_data, earnings_alerts, morning_narrative, total_value,
+        yt_analyses=yt_analyses, em_data=em_data,
     )
     text_report = build_morning_text(
         today_str, market_ov, active_signals, gap_alerts,
         news_data, earnings_alerts, morning_narrative, total_value,
+        yt_analyses=yt_analyses, em_data=em_data,
     )
 
     active_count = len(active_signals)
