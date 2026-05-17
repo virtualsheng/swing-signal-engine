@@ -52,6 +52,21 @@ def get_premarket_quote(symbol: str) -> dict:
         "is_available":  bool,
       }
     """
+    from datetime import datetime, time as dtime
+    import pytz
+    now_et = datetime.now(pytz.timezone("America/New_York"))
+    hour   = now_et.hour
+    # Pre-market: 4:00–9:30 AM ET  |  Market open: 9:30–4:00 PM ET
+    # After hours: 4:00–8:00 PM ET  |  Overnight/weekend: else
+    if 4 <= hour < 9 or (hour == 9 and now_et.minute < 30):
+        data_type = "pre-market"
+    elif (hour == 9 and now_et.minute >= 30) or (9 < hour < 16):
+        data_type = "intraday"
+    elif 16 <= hour < 20:
+        data_type = "after-hours"
+    else:
+        data_type = "overnight"
+
     result = {
         "symbol":          symbol,
         "prev_close":      0.0,
@@ -59,6 +74,7 @@ def get_premarket_quote(symbol: str) -> dict:
         "gap_pct":         0.0,
         "gap_label":       "flat",
         "is_available":    False,
+        "data_type":       data_type,   # what this price actually represents
     }
     try:
         ticker    = yf.Ticker(symbol)
@@ -71,11 +87,11 @@ def get_premarket_quote(symbol: str) -> dict:
         if prev_close:
             result["prev_close"] = float(prev_close)
 
-        # Use pre-market price if available, else regular
-        current = premarket_price or regular_price
-        if current and prev_close and prev_close > 0:
-            gap_pct = (float(current) - float(prev_close)) / float(prev_close) * 100
-            result["premarket_price"] = float(current)
+        # Only use genuine pre-market price — do NOT fall back to regular
+        # price. Falling back produces the daily return, not a gap.
+        if premarket_price and prev_close and float(prev_close) > 0:
+            gap_pct = (float(premarket_price) - float(prev_close)) / float(prev_close) * 100
+            result["premarket_price"] = float(premarket_price)
             result["gap_pct"]         = round(gap_pct, 2)
             result["is_available"]    = True
             if gap_pct > 0.3:

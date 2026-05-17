@@ -1,25 +1,30 @@
-# Secrets
+# Environment / secrets
 .env
 
-# Virtual environment
-venv/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Runtime/generated data
+# Cache (regenerated on each run)
 cache/
 logs/
 
-# Build artifacts
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
 *.egg-info/
 dist/
 build/
 
-# Misc
-structure.txt
-*.db
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swob
 Portfolio*.csv
