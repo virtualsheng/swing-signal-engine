@@ -36,33 +36,56 @@ def _conviction_bar(c: int) -> str:
 def build_portfolio_summary(signals_by_account: dict, portfolio: dict) -> dict:
     """
     Compute today's estimated P&L per account from 1-day price changes.
-    Returns portfolio_summary dict for market narrative + dashboard.
+
+    Account value is computed dynamically from shares × live price (from signal
+    data) so it stays current even when portfolio.json hasn't been updated.
+    Falls back to portfolio.json account_value if no signal data is available
+    (e.g. monitor-only 401k accounts).
     """
     accounts_out = []
     total_value  = 0.0
     total_pnl    = 0.0
 
     for acct_name, acct_config in portfolio.get("accounts", {}).items():
-        acct_val  = acct_config.get("account_value", 0)
-        total_value += acct_val
-        positions = acct_config.get("positions", {})
+        positions    = acct_config.get("positions", {})
+        acct_signals = signals_by_account.get(acct_name, [])
+        sig_by_sym   = {s["symbol"]: s for s in acct_signals}
 
-        pnl_today = 0.0
+        # Compute live account value from shares × today's live price
+        live_value = 0.0
+        pnl_today  = 0.0
+
         for sym, pos in positions.items():
             shares = pos.get("shares", 0)
-            price  = pos.get("current_price", 0)
-            acct_signals = signals_by_account.get(acct_name, [])
-            sig = next((s for s in acct_signals if s["symbol"] == sym), None)
+            if shares == 0:
+                continue
+            sig = sig_by_sym.get(sym)
             if sig:
+                live_price = sig.get("price", pos.get("current_price", 0))
                 chg_1d     = sig.get("scorecard", {}).get("chg_1d", 0) if "scorecard" in sig else sig.get("chg_1d", 0)
-                prev_price = price / (1 + chg_1d / 100) if chg_1d != -100 else price
-                pnl_today += (price - prev_price) * shares
+            else:
+                # Monitor-only account or symbol not in signals — use stale price
+                live_price = pos.get("current_price", 0)
+                chg_1d     = 0.0
 
-        pnl_pct = pnl_today / acct_val * 100 if acct_val > 0 else 0
-        total_pnl += pnl_today
+            live_value += shares * live_price
+
+            # P&L = shares × (live_price - yesterday_price)
+            if chg_1d != -100 and live_price > 0:
+                prev_price  = live_price / (1 + chg_1d / 100)
+                pnl_today  += shares * (live_price - prev_price)
+
+        # Fall back to portfolio.json account_value for monitor-only accounts
+        # (mutual funds — no live price in signals)
+        if live_value == 0:
+            live_value = acct_config.get("account_value", 0)
+
+        pnl_pct = pnl_today / live_value * 100 if live_value > 0 else 0
+        total_value += live_value
+        total_pnl   += pnl_today
         accounts_out.append({
             "name":      acct_name,
-            "value":     acct_val,
+            "value":     live_value,
             "pnl_today": pnl_today,
             "pnl_pct":   pnl_pct,
         })
