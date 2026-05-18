@@ -2,11 +2,12 @@
 report_builder.py — Full HTML + text report
 ─────────────────────────────────────────────
 Sections:
-  1. Portfolio dashboard  — today's P&L per account, allocation, concentration
-  2. Market narrative     — AI-generated 4–6 sentence market summary
-  3. Per-account signals  — action required / watching / blocked
+  0. Market close snapshot  — CNBC-style closing price bar (EOD only)
+  1. Portfolio dashboard    — today's P&L per account, allocation, concentration
+  2. Market narrative       — AI-generated 4–6 sentence market summary
+  3. Per-account signals    — action required / watching / blocked
   4. Full technical scorecards — every symbol gets a complete breakdown
-  5. 401(k) monitor       — no signals, just current values
+  5. 401(k) monitor         — no signals, just current values
 """
 
 import logging
@@ -30,7 +31,7 @@ def _conviction_bar(c: int) -> str:
     return BAR_CHAR * f + EMPTY_CHAR * (BAR_WIDTH - f)
 
 
-# ── Portfolio summary builder (called from run_signals.py) ───────────────────
+# ── Portfolio summary builder ─────────────────────────────────────────────────
 
 def build_portfolio_summary(signals_by_account: dict, portfolio: dict) -> dict:
     """
@@ -42,7 +43,7 @@ def build_portfolio_summary(signals_by_account: dict, portfolio: dict) -> dict:
     total_pnl    = 0.0
 
     for acct_name, acct_config in portfolio.get("accounts", {}).items():
-        acct_val = acct_config.get("account_value", 0)
+        acct_val  = acct_config.get("account_value", 0)
         total_value += acct_val
         positions = acct_config.get("positions", {})
 
@@ -50,21 +51,20 @@ def build_portfolio_summary(signals_by_account: dict, portfolio: dict) -> dict:
         for sym, pos in positions.items():
             shares = pos.get("shares", 0)
             price  = pos.get("current_price", 0)
-            # Try to get today's change from signal data
             acct_signals = signals_by_account.get(acct_name, [])
             sig = next((s for s in acct_signals if s["symbol"] == sym), None)
             if sig:
-                chg_1d   = sig.get("scorecard", {}).get("chg_1d", 0) if "scorecard" in sig else sig.get("chg_1d", 0)
+                chg_1d     = sig.get("scorecard", {}).get("chg_1d", 0) if "scorecard" in sig else sig.get("chg_1d", 0)
                 prev_price = price / (1 + chg_1d / 100) if chg_1d != -100 else price
                 pnl_today += (price - prev_price) * shares
 
         pnl_pct = pnl_today / acct_val * 100 if acct_val > 0 else 0
         total_pnl += pnl_today
         accounts_out.append({
-            "name":       acct_name,
-            "value":      acct_val,
-            "pnl_today":  pnl_today,
-            "pnl_pct":    pnl_pct,
+            "name":      acct_name,
+            "value":     acct_val,
+            "pnl_today": pnl_today,
+            "pnl_pct":   pnl_pct,
         })
 
     return {
@@ -82,10 +82,11 @@ def get_top_movers(signals_by_account: dict, n: int = 5) -> list:
             sc    = s.get("scorecard", {})
             chg1d = sc.get("chg_1d", s.get("chg_1d", 0))
             movers.append({
-                "symbol":  s["symbol"],
-                "chg_1d":  chg1d,
-                "signal":  s["signal"],
-                "account": acct_name,
+                "symbol":     s["symbol"],
+                "chg_1d":     chg1d,
+                "signal":     s["signal"],
+                "conviction": s.get("conviction", 50),
+                "account":    acct_name,
             })
     movers.sort(key=lambda x: abs(x["chg_1d"]), reverse=True)
     return movers[:n]
@@ -102,6 +103,8 @@ def build_html_report(
     market_narrative: str = "",
     portfolio_summary: dict = None,
     portfolio: dict = None,
+    futures_snap: list = None,
+    top_headline: dict = None,
 ) -> str:
     portfolio = portfolio or {}
     now   = datetime.now().strftime("%B %d, %Y %H:%M ET")
@@ -129,6 +132,15 @@ def build_html_report(
 
     def chk(ok):
         return '<span style="color:#1D9E75">✓</span>' if ok else '<span style="color:#E24B4A">✗</span>'
+
+    # ── 0. CNBC-style market snapshot bar ─────────────────────────────────────
+    market_bar_html = ""
+    if futures_snap:
+        try:
+            from signals.market_futures import format_futures_html
+            market_bar_html = format_futures_html(futures_snap, top_headline or {})
+        except ImportError:
+            pass
 
     # ── 1. Portfolio dashboard ─────────────────────────────────────────────────
     dashboard_html = ""
@@ -173,7 +185,7 @@ def build_html_report(
     account_sections = ""
     for account_name, signals in signals_by_account.items():
         acct_val   = (signals[0]["account_value"] if signals
-                  else portfolio.get("accounts", {}).get(account_name, {}).get("account_value", 0))
+                      else portfolio.get("accounts", {}).get(account_name, {}).get("account_value", 0))
         actionable = [s for s in signals if s["signal"] in ("BUY","SELL","STRONG_BUY","STRONG_SELL") and not s.get("blocked_by")]
         watching   = [s for s in signals if s["signal"] == "HOLD" and s["conviction"] >= 55 and not s.get("blocked_by")]
         blocked_s  = [s for s in signals if s.get("blocked_by")]
@@ -189,24 +201,23 @@ def build_html_report(
 
                 held_html = ""
                 if s.get("held") and s.get("avg_cost"):
-                    u = s.get("unrealized_pct", 0)
+                    u  = s.get("unrealized_pct", 0)
                     uc = chg_color(u)
                     held_html = f'<br><span style="font-size:11px;color:{uc}">held {s.get("shares",0):.0f}sh @ ${s["avg_cost"]:.2f} ({u:+.1f}%)</span>'
 
                 size_html = ""
                 if show_size and s["signal"] in ("BUY","STRONG_BUY"):
-                    sz = s.get("suggested_usd", 0)
-                    sp = s.get("suggested_pct", 0)
-                    # Concentration check
-                    pos_val = s.get("shares", 0) * s.get("price", 0)
-                    cur_pct = pos_val / acct_val * 100 if acct_val > 0 else 0
+                    sz  = s.get("suggested_usd", 0)
+                    sp  = s.get("suggested_pct", 0)
+                    pos_val  = s.get("shares", 0) * s.get("price", 0)
+                    cur_pct  = pos_val / acct_val * 100 if acct_val > 0 else 0
                     conc_warn = ""
                     if cur_pct > 12:
                         conc_warn = f'<br><span style="color:#E24B4A;font-size:11px">⚠️ already {cur_pct:.0f}% of account</span>'
                     size_html = f'<span style="color:#1D9E75;font-weight:500">${sz:,.0f}</span><span style="font-size:11px;color:#888"> ({sp:.1f}%)</span>{conc_warn}'
 
                 blocked_html = f'<span style="color:#E24B4A;font-size:12px">⛔ {s["blocked_by"]}</span>' if s.get("blocked_by") else ""
-                narrative = s.get("narrative","")
+                narrative    = s.get("narrative", "")
 
                 rows += f"""
                 <tr style="border-top:0.5px solid #E8E6DF">
@@ -223,11 +234,10 @@ def build_html_report(
                 {"<tr><td colspan='6' style='padding:2px 8px 10px;font-size:12px;color:#5F5E5A;font-style:italic'>" + narrative + "</td></tr>" if narrative else ""}"""
             return rows
 
-        th = 'style="padding:6px 8px;text-align:left;font-weight:400;color:#5F5E5A;font-size:12px;background:#F7F5EE"'
+        th  = 'style="padding:6px 8px;text-align:left;font-weight:400;color:#5F5E5A;font-size:12px;background:#F7F5EE"'
         thr = 'style="padding:6px 8px;text-align:right;font-weight:400;color:#5F5E5A;font-size:12px;background:#F7F5EE"'
         thead = f'<tr><th {th}>Symbol</th><th {th}>Conviction</th><th {th}>Signal</th><th {thr}>Price / 1d</th><th {thr}>Size</th><th {th}>Reason</th></tr>'
 
-        action_block = ""
         if actionable:
             action_block = f"""
             <div style="margin-bottom:14px">
@@ -266,7 +276,7 @@ def build_html_report(
           </div>
         </div>"""
 
-    # ── 4. Full technical scorecard section ───────────────────────────────────
+    # ── 4. Full technical scorecard section ────────────────────────────────────
     scorecard_sections = ""
     for account_name, signals in signals_by_account.items():
         if not signals:
@@ -280,7 +290,6 @@ def build_html_report(
             color = {"BUY":"#1D9E75","STRONG_BUY":"#1D9E75",
                      "SELL":"#E24B4A","STRONG_SELL":"#E24B4A","HOLD":"#BA7517"}.get(sig,"#888780")
 
-            # Unrealized P&L row
             held_row = ""
             if s.get("held") and s.get("avg_cost") and s.get("shares"):
                 cost_basis = s["avg_cost"] * s["shares"]
@@ -299,7 +308,6 @@ def build_html_report(
                   </td>
                 </tr>"""
 
-            # Concentration warning
             pos_val  = s.get("shares", 0) * s["price"]
             pos_pct  = pos_val / acct_val * 100 if acct_val > 0 else 0
             conc_html = ""
@@ -308,8 +316,8 @@ def build_html_report(
             elif pos_pct > 10:
                 conc_html = f'&nbsp;<span style="color:#BA7517;font-size:11px">⚠️ concentrated {pos_pct:.0f}%</span>'
 
-            chg1d  = sc.get("chg_1d", s.get("chg_1d", 0))
-            chg5d  = sc.get("chg_5d", s.get("chg_5d", 0))
+            chg1d  = sc.get("chg_1d",  s.get("chg_1d",  0))
+            chg5d  = sc.get("chg_5d",  s.get("chg_5d",  0))
             chg20d = sc.get("chg_20d", 0)
 
             rows += f"""
@@ -345,29 +353,27 @@ def build_html_report(
                     <td style="padding:2px 12px 2px 0;color:#5F5E5A;white-space:nowrap">MACD</td>
                     <td style="padding:2px 0">{sc.get('macd_label','—')}</td>
                     <td style="padding:2px 0 2px 16px;color:#5F5E5A;white-space:nowrap">Hist</td>
-                    <td style="padding:2px 0;color:{"#1D9E75" if sc.get('hist_rising') else "#E24B4A"}">{"rising ↑" if sc.get('hist_rising') else "falling ↓"}</td>
+                    <td style="padding:2px 0">{sc.get('macd_hist_label','—')}</td>
                   </tr>
                   <tr>
                     <td style="padding:2px 12px 2px 0;color:#5F5E5A;white-space:nowrap">SMA 50</td>
                     <td style="padding:2px 0">
-                      {chk(sc.get('above_sma50'))} ${sc.get('sma50',0):.2f}
-                      <span style="color:{"#1D9E75" if sc.get('dist_sma50_pct',0)>=0 else "#E24B4A"};font-size:11px">
-                        ({sc.get('dist_sma50_pct',0):+.1f}%)
-                      </span>
+                      {chk(sc.get('above_sma50'))}
+                      <span style="color:#888">&nbsp;${sc.get('sma50',0):.2f}
+                      ({(s['price']/sc['sma50']-1)*100:+.1f}%)</span>
                     </td>
                     <td style="padding:2px 0 2px 16px;color:#5F5E5A;white-space:nowrap">SMA 200</td>
                     <td style="padding:2px 0">
-                      {chk(sc.get('above_sma200'))} ${sc.get('sma200',0):.2f}
-                      <span style="color:{"#1D9E75" if sc.get('dist_sma200_pct',0)>=0 else "#E24B4A"};font-size:11px">
-                        ({sc.get('dist_sma200_pct',0):+.1f}%)
-                      </span>
+                      {chk(sc.get('above_sma200'))}
+                      <span style="color:#888">&nbsp;${sc.get('sma200',0):.2f}
+                      ({(s['price']/sc['sma200']-1)*100 if sc.get('sma200') else 0:+.1f}%)</span>
                     </td>
                   </tr>
                   <tr>
                     <td style="padding:2px 12px 2px 0;color:#5F5E5A;white-space:nowrap">Volume</td>
                     <td style="padding:2px 0">
                       <span style="color:{"#1D9E75" if sc.get('vol_ratio',1)>1.5 else "#888"}">{sc.get('vol_ratio',1):.2f}x</span>
-                      &nbsp;<span style="color:#888">{sc.get('vol_label','')}</span>
+                      &nbsp;<span style="color:#888">{sc.get('vol_label','avg')}</span>
                     </td>
                     <td style="padding:2px 0 2px 16px;color:#5F5E5A;white-space:nowrap">ATR</td>
                     <td style="padding:2px 0;color:#888">${sc.get('atr',0):.2f} ({sc.get('atr_pct',0):.1f}%)</td>
@@ -413,7 +419,7 @@ def build_html_report(
           </table>
         </div>"""
 
-    # ── 5. 401(k) monitor ─────────────────────────────────────────────────────
+    # ── 5. Monitor-only section ────────────────────────────────────────────────
     monitor_section = ""
     if monitor_data:
         mrows = ""
@@ -456,6 +462,7 @@ def build_html_report(
   <h1 style="margin:0;font-size:20px;font-weight:500">Swing Signal Report — {label}</h1>
   <p style="margin:4px 0 0;font-size:13px;color:#5F5E5A">{now} &nbsp;|&nbsp; Total portfolio: ${total_value:,.0f}</p>
 </div>
+{market_bar_html}
 <div style="background:#F1EFE8;border-left:3px solid {regime_color};padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:20px">
   <strong style="font-size:13px">Market Regime:</strong>
   <span style="color:{regime_color};font-weight:500"> {regime.get('regime','').replace('_',' ').title()}</span>
@@ -485,18 +492,32 @@ def build_text_report(
     market_narrative: str = "",
     portfolio_summary: dict = None,
     portfolio: dict = None,
+    futures_snap: list = None,
+    top_headline: dict = None,
 ) -> str:
     portfolio = portfolio or {}
     now   = datetime.now().strftime("%b %d, %Y %H:%M ET")
     label = "PRE-MARKET" if report_type == "PREMARKET" else "EOD"
+
     lines = [
         "═" * 64,
         f"  SWING SIGNALS — {label} — {now}",
         f"  Total portfolio: ${total_value:,.0f}",
-        "═" * 64, "",
+        "═" * 64,
+        "",
     ]
 
-    # Portfolio dashboard
+    # ── Market closing snapshot ────────────────────────────────────────────────
+    if futures_snap:
+        try:
+            from signals.market_futures import format_futures_text
+            lines += ["MARKET CLOSE SNAPSHOT:", format_futures_text(futures_snap), ""]
+        except ImportError:
+            pass
+    if top_headline and top_headline.get("title"):
+        lines += [f"  📰 {top_headline['title']}", ""]
+
+    # ── Portfolio dashboard ────────────────────────────────────────────────────
     if portfolio_summary:
         total_pnl = portfolio_summary.get("total_pnl_today", 0)
         total_pct = portfolio_summary.get("total_pnl_pct", 0)
@@ -507,62 +528,59 @@ def build_text_report(
             lines.append(f"    {a['name']:<28} ${a['value']:>10,.0f}  {p:+,.0f} ({pp:+.2f}%)")
         lines.append("")
 
-    # Regime
+    # ── Regime ─────────────────────────────────────────────────────────────────
     regime_emoji = {"trending_up":"📈","trending_down":"📉",
                     "ranging":"↔️","volatile":"⚡"}.get(regime.get("regime",""),"❓")
     lines += [
-        f"  MARKET REGIME: {regime_emoji} {regime.get('regime','').upper()}",
+        f"  MARKET REGIME: {regime_emoji} {regime.get('regime','').replace('_',' ').upper()}",
         f"  {regime.get('description','')}",
         "",
     ]
 
-    # Market narrative
+    # ── Market narrative ───────────────────────────────────────────────────────
     if market_narrative:
         lines += ["  MARKET COMMENTARY:", f"  {market_narrative}", ""]
 
-    # Signals per account
+    # ── Signals per account ────────────────────────────────────────────────────
     for account_name, signals in signals_by_account.items():
-        acct_val   = (signals[0]["account_value"] if signals
-                  else portfolio.get("accounts", {}).get(account_name, {}).get("account_value", 0))
+        acct_val = (signals[0]["account_value"] if signals
+                    else portfolio.get("accounts", {}).get(account_name, {}).get("account_value", 0))
+        lines += [
+            "─" * 64,
+            f"  {account_name}  ${acct_val:,.0f}",
+            "─" * 64,
+        ]
+
         actionable = [s for s in signals if s["signal"] in ("BUY","SELL","STRONG_BUY","STRONG_SELL") and not s.get("blocked_by")]
         watching   = [s for s in signals if s["signal"] == "HOLD" and s["conviction"] >= 55 and not s.get("blocked_by")]
         blocked_s  = [s for s in signals if s.get("blocked_by")]
 
-        lines += [
-            "─" * 64,
-            f"  {account_name.upper()}  —  ${acct_val:,.0f}",
-            "─" * 64,
-        ]
+        bar = lambda c: _conviction_bar(c)
 
         if actionable:
             lines.append("  ⚡ ACTION REQUIRED:")
             for s in sorted(actionable, key=lambda x: -x["conviction"]):
-                sig   = s.get("ai_action", s["signal"])
-                bar   = _conviction_bar(s["conviction"])
-                emoji = SIGNAL_EMOJI.get(sig, "⚪")
                 sc    = s.get("scorecard", {})
                 chg1d = sc.get("chg_1d", s.get("chg_1d", 0))
-                held_str = f" [held {s.get('shares',0):.0f}sh @ ${s.get('avg_cost',0):.2f}, {s.get('unrealized_pct',0):+.1f}%]" if s.get("held") else ""
-                size_str = f"  → ${s.get('suggested_usd',0):,.0f} ({s.get('suggested_pct',0):.1f}%)" if sig in ("BUY","STRONG_BUY") else ""
+                emoji = SIGNAL_EMOJI.get(s["signal"], "")
+                sz    = s.get("suggested_usd", 0)
                 lines.append(
-                    f"  {emoji} {s['symbol']:6} {bar} {s['conviction']:3d}  "
-                    f"{sig:<12} ${s['price']:>8.2f} ({chg1d:+.2f}% 1d)"
-                    f"{size_str}{held_str}"
+                    f"  {emoji} {s['symbol']:6} {bar(s['conviction'])} {s['conviction']:3d}  "
+                    f"{s['signal']:12} ${s['price']:>8.2f} ({chg1d:+.2f}% 1d)  ${sz:,.0f}"
                 )
                 if s.get("narrative"):
-                    lines.append(f"      ↳ {s['narrative'][:110]}")
+                    lines.append(f"     {s['narrative']}")
             lines.append("")
 
         if watching:
             lines.append("  👁 WATCHING:")
             for s in sorted(watching, key=lambda x: -x["conviction"]):
-                bar   = _conviction_bar(s["conviction"])
                 sc    = s.get("scorecard", {})
                 chg1d = sc.get("chg_1d", s.get("chg_1d", 0))
-                held_str = f" [held {s.get('unrealized_pct',0):+.1f}%]" if s.get("held") else ""
+                held  = f" [held {s.get('unrealized_pct',0):+.1f}%]" if s.get("held") else ""
                 lines.append(
-                    f"  🟡 {s['symbol']:6} {bar} {s['conviction']:3d}  "
-                    f"HOLD         ${s['price']:>8.2f} ({chg1d:+.2f}% 1d){held_str}"
+                    f"  🟡 {s['symbol']:6} {bar(s['conviction'])} {s['conviction']:3d}  "
+                    f"HOLD         ${s['price']:>8.2f} ({chg1d:+.2f}% 1d){held}"
                 )
             lines.append("")
 
@@ -572,7 +590,6 @@ def build_text_report(
                 lines.append(f"     {s['symbol']:6} {s['signal']:5} — {s['blocked_by']}")
             lines.append("")
 
-        # Mini scorecard per symbol
         lines.append("  TECHNICAL SUMMARY:")
         for s in sorted(signals, key=lambda x: -x["conviction"]):
             sc    = s.get("scorecard", {})
@@ -588,7 +605,7 @@ def build_text_report(
             )
         lines.append("")
 
-    # Monitor
+    # ── Monitor ────────────────────────────────────────────────────────────────
     if monitor_data:
         lines += ["─" * 64, "  MONITOR ONLY — 401(k):", "─" * 64]
         for acct_name, data in monitor_data.items():

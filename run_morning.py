@@ -3,10 +3,14 @@ run_morning.py — Morning Intelligence Report (7:30 AM ET)
 ──────────────────────────────────────────────────────────
 Overnight context before you execute anything. Reads last night's
 EOD signals and enriches them with:
+  - CNBC-style futures bar: DOW FUT, S&P FUT, NAS FUT, OIL, US 10-YR,
+    GOLD, SILVER, BITCOIN + top market headline
   - Pre-market price moves for all holdings
   - Gap analysis (which positions gapped overnight)
   - News sentiment per symbol (Yahoo Finance + Ollama)
   - Market overview: SPY/QQQ futures direction, VIX level
+  - Options expected move for SPY and QQQ
+  - YouTube channel analysis
   - Earnings calendar: any of your symbols reporting this week
   - Watchlist for today: which EOD signals survived overnight
 
@@ -49,6 +53,10 @@ from signals.news_fetcher    import fetch_news_batch, sentiment_emoji
 from signals.earnings_filter import is_near_earnings
 from signals.portfolio       import load_portfolio, get_tradeable_accounts
 from signals.ai_engine       import check_ollama_available
+from signals.market_futures  import (
+    get_futures_snapshot, get_top_headline,
+    format_futures_text, format_futures_html,
+)
 from notifications.notifier  import deliver_report
 
 SIGNAL_LOG_FILE = "cache/signal_log.json"
@@ -155,6 +163,8 @@ def build_morning_html(
     total_value: float,
     yt_analyses: list = None,
     em_data: dict = None,
+    futures_snap: list = None,
+    top_headline: dict = None,
 ) -> str:
     spy_gap = market_overview.get("spy", {}).get("gap_pct", 0)
     qqq_gap = market_overview.get("qqq", {}).get("gap_pct", 0)
@@ -168,7 +178,12 @@ def build_morning_html(
     vix_color = {"extreme fear":"#E24B4A","elevated":"#BA7517",
                  "normal":"#888780","complacent":"#1D9E75"}.get(vix_lvl, "#888780")
 
-    # Market overview bar
+    # ── CNBC-style futures ticker bar + headline ───────────────────────────
+    futures_html = ""
+    if futures_snap:
+        futures_html = format_futures_html(futures_snap, top_headline or {})
+
+    # ── Market overview bar (SPY / QQQ / VIX) ─────────────────────────────
     overview_html = f"""
     <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;padding:14px;background:#F1EFE8;border-radius:8px">
       <div>
@@ -186,14 +201,14 @@ def build_morning_html(
       <div style="margin-left:auto;font-size:12px;color:#888;align-self:center">{ts}</div>
     </div>"""
 
-    # AI narrative
+    # ── AI narrative ───────────────────────────────────────────────────────
     narrative_html = f"""
     <div style="margin-bottom:20px;padding:14px 16px;border-left:3px solid #1D9E75;background:#FAFAF8;border-radius:0 6px 6px 0">
       <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Morning Briefing</div>
       <p style="margin:0;font-size:13px;line-height:1.7;color:#2C2C2A">{morning_narrative}</p>
     </div>"""
 
-    # Gap alerts
+    # ── Gap alerts ─────────────────────────────────────────────────────────
     gap_rows = ""
     for g in sorted(gap_alerts, key=lambda x: -abs(x["gap_pct"])):
         sig_label = gap_significance(g["gap_pct"], g.get("asset_class","etf"))
@@ -234,7 +249,7 @@ def build_morning_html(
       </table>
     </div>"""
 
-    # Active signals watchlist
+    # ── Active signals watchlist ───────────────────────────────────────────
     signal_rows = ""
     for s in sorted(active_signals, key=lambda x: -x["conviction"]):
         sig   = s["eod_signal"]
@@ -246,9 +261,9 @@ def build_morning_html(
         sent_e= sentiment_emoji(sent)
         watch_note = ""
         if sig in ("BUY","STRONG_BUY"):
-            watch_note = f"Watch for confirmation above OR high at open"
+            watch_note = "Watch for confirmation above OR high at open"
         elif sig in ("SELL","STRONG_SELL"):
-            watch_note = f"Watch for continuation lower — consider reducing"
+            watch_note = "Watch for continuation lower — consider reducing"
         signal_rows += f"""
         <tr style="border-top:0.5px solid #E8E6DF">
           <td style="padding:7px 8px;font-weight:500">{s['symbol']}</td>
@@ -280,17 +295,17 @@ def build_morning_html(
       </table>
     </div>"""
 
-    # News sentiment
+    # ── News sentiment ─────────────────────────────────────────────────────
     news_rows = ""
     for sym, nd in sorted(news_data.items(), key=lambda x: -abs(x[1].get("sentiment",0))):
         if not nd.get("headlines"):
             continue
-        emoji  = sentiment_emoji(nd.get("sentiment", 0))
-        label  = nd.get("sentiment_label", "neutral")
-        summary = nd.get("sentiment_summary", "")[:80]
+        emoji    = sentiment_emoji(nd.get("sentiment", 0))
+        label    = nd.get("sentiment_label", "neutral")
+        summary  = nd.get("sentiment_summary", "")[:80]
         catalyst = nd.get("catalyst", "none")
         cat_html = f'<span style="color:#BA7517;font-size:11px"> [{catalyst}]</span>' if catalyst and catalyst != "none" else ""
-        recent = nd.get("headlines", [{}])[0].get("title", "")[:70]
+        recent   = nd.get("headlines", [{}])[0].get("title", "")[:70]
         news_rows += f"""
         <tr style="border-top:0.5px solid #E8E6DF">
           <td style="padding:7px 8px;font-weight:500">{sym}</td>
@@ -316,9 +331,8 @@ def build_morning_html(
       </table>
     </div>"""
 
-    # Earnings alerts
+    # ── Earnings alerts ────────────────────────────────────────────────────
     earn_html = ""
-
     if earnings_alerts:
         earn_rows = "".join(
             f'<tr style="border-top:0.5px solid #E8E6DF">'
@@ -329,89 +343,64 @@ def build_morning_html(
             for e in earnings_alerts
         )
         earn_html = f"""
-        <div style="margin-bottom:20px;border:1px solid #F7C1C1;border-radius:8px;overflow:hidden;background:#FFF5F5">
-          <div style="background:#FCEBEB;padding:10px 14px;border-bottom:1px solid #F7C1C1">
-            <span style="font-weight:500;color:#A32D2D">⚠️ Earnings Alert — BUY signals blocked</span>
+        <div style="margin-bottom:20px;border:0.5px solid #F5D38A;border-radius:8px;overflow:hidden">
+          <div style="background:#FDF8EC;padding:10px 14px;border-bottom:0.5px solid #F5D38A">
+            <span style="font-weight:500;color:#BA7517">⚠️ Earnings Alerts</span>
+            <span style="color:#888;font-size:12px;margin-left:8px">BUY signals blocked within 48h of earnings</span>
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:#FCEAEA">
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:12px">Symbol</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:12px">Account</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:12px">Note</th>
-            </tr></thead>
             <tbody>{earn_rows}</tbody>
           </table>
         </div>"""
 
-    # ── YouTube sections (one per channel) ───────────────────────────────────
+    # ── YouTube analysis sections ──────────────────────────────────────────
     yt_sections_html = ""
     for yt_analysis in (yt_analyses or []):
-      if True:
-        bias_color = {"bullish":"#1D9E75","bearish":"#E24B4A",
-                      "neutral":"#888780","mixed":"#BA7517","unknown":"#888780"}.get(
-            yt_analysis.get("overall_bias","neutral"), "#888780")
+        if yt_analysis.get("error"):
+            continue
+        bias       = yt_analysis.get("overall_bias", "neutral")
+        bias_color = {"bullish":"#1D9E75","bearish":"#E24B4A","neutral":"#888780",
+                      "cautious":"#BA7517","mixed":"#888780"}.get(bias.lower(),"#888780")
 
         # Price targets table
+        pt_table = ""
         pts = yt_analysis.get("price_targets", [])
-        pt_rows = ""
-        for pt in pts:
-            sym = pt.get("symbol","")
-            tl  = pt.get("target_low");  th_v = pt.get("target_high")
-            sl  = pt.get("support");     rs   = pt.get("resistance")
-            er_l= pt.get("expected_range_low"); er_h = pt.get("expected_range_high")
-            tf  = pt.get("timeframe","")
-            notes = pt.get("notes","")[:60]
-            range_str = (f"${er_l:.2f}–${er_h:.2f}" if er_l and er_h else
-                         f"${tl:.2f}–${th_v:.2f}" if tl and th_v else "—")
-            pt_rows += f"""
-            <tr style="border-top:0.5px solid #E8E6DF">
-              <td style="padding:7px 8px;font-weight:500">{sym}</td>
-              <td style="padding:7px 8px;color:#1D9E75">{range_str}</td>
-              <td style="padding:7px 8px;color:#E24B4A">{f"${sl:.2f}" if sl else "—"}</td>
-              <td style="padding:7px 8px;color:#BA7517">{f"${rs:.2f}" if rs else "—"}</td>
-              <td style="padding:7px 8px;font-size:11px;color:#5F5E5A">{tf}</td>
-              <td style="padding:7px 8px;font-size:11px;color:#888">{notes}</td>
-            </tr>"""
+        if pts:
+            pt_rows = "".join(
+                f'<tr style="border-top:0.5px solid #E8E6DF">'
+                f'<td style="padding:5px 8px;font-weight:500">{pt.get("symbol","")}</td>'
+                f'<td style="padding:5px 8px">{pt.get("direction","")}</td>'
+                f'<td style="padding:5px 8px">{pt.get("target","")}</td>'
+                f'<td style="padding:5px 8px;font-size:12px;color:#5F5E5A">{pt.get("comment","")}</td>'
+                f'</tr>'
+                for pt in pts
+            )
+            pt_table = f"""
+            <div style="margin-top:10px">
+              <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:4px">Price Targets Mentioned</div>
+              <table style="width:100%;border-collapse:collapse;font-size:13px;background:#F7F5EE;border-radius:6px">
+                <tbody>{pt_rows}</tbody>
+              </table>
+            </div>"""
 
-        pt_table = f"""
-        <div style="margin-bottom:12px">
-          <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:6px">Price Targets & Expected Ranges</div>
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:#F7F5EE">
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Symbol</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Target/Range</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Support</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Resistance</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Timeframe</th>
-              <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Notes</th>
-            </tr></thead>
-            <tbody>{pt_rows}</tbody>
-          </table>
-        </div>""" if pt_rows else ""
-
-        # Cross-reference with your signals
-        cr = yt_analysis.get("cross_reference", [])
-        portfolio_cr = [x for x in cr if x["alignment"] != "not_in_portfolio"]
+        # Cross-reference table
         cr_rows = ""
-        for x in portfolio_cr:
-            align_color = {"aligned":"#1D9E75","conflict":"#E24B4A","neutral":"#888780"}.get(x["alignment"],"#888780")
-            align_icon  = {"aligned":"✅","conflict":"⚠️","neutral":"—"}.get(x["alignment"],"—")
-            sent_color  = {"bullish":"#1D9E75","bearish":"#E24B4A","cautious":"#BA7517","neutral":"#888780"}.get(x["yt_sentiment"],"#888780")
-            eod_color   = {"BUY":"#1D9E75","STRONG_BUY":"#1D9E75","SELL":"#E24B4A","STRONG_SELL":"#E24B4A"}.get(x.get("eod_signal",""),"#888780")
-            action      = x.get("action_mentioned","")
-            cr_rows += f"""
-            <tr style="border-top:0.5px solid #E8E6DF">
-              <td style="padding:7px 8px;font-weight:500">{x["symbol"]}</td>
-              <td style="padding:7px 8px;color:{sent_color}">{x["yt_sentiment"].title()}</td>
-              <td style="padding:7px 8px;font-size:11px;color:#888">{action}</td>
-              <td style="padding:7px 8px;font-size:12px;color:#5F5E5A">{x["yt_comment"][:65]}</td>
-              <td style="padding:7px 8px;color:{eod_color}">{x.get("eod_signal","—")}</td>
-              <td style="padding:7px 8px;color:{align_color};font-weight:500">{align_icon} {x["alignment"].replace("_"," ").title()}</td>
-            </tr>"""
-
+        for cr in yt_analysis.get("portfolio_crossref", []):
+            align_color = {"aligned":"#1D9E75","opposed":"#E24B4A","neutral":"#888"}.get(
+                cr.get("alignment","neutral").lower(), "#888")
+            cr_rows += (
+                f'<tr style="border-top:0.5px solid #E8E6DF">'
+                f'<td style="padding:5px 8px;font-weight:500">{cr.get("symbol","")}</td>'
+                f'<td style="padding:5px 8px;font-size:12px">{cr.get("fom_view","")}</td>'
+                f'<td style="padding:5px 8px;font-size:12px">{cr.get("action","")}</td>'
+                f'<td style="padding:5px 8px;font-size:12px;color:#5F5E5A">{cr.get("comment","")}</td>'
+                f'<td style="padding:5px 8px;font-size:12px">{cr.get("your_signal","")}</td>'
+                f'<td style="padding:5px 8px;font-size:12px;color:{align_color};font-weight:500">'
+                f'{cr.get("alignment","")}</td></tr>'
+            )
         cr_table = f"""
-        <div style="margin-bottom:12px">
-          <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:6px">Your Portfolio — Cross-Reference</div>
+        <div style="margin-top:10px">
+          <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:4px">Your Portfolio — Cross-Reference</div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:#F7F5EE">
               <th style="padding:6px 8px;font-weight:400;color:#5F5E5A;font-size:11px">Symbol</th>
@@ -451,18 +440,14 @@ def build_morning_html(
           </div>
         </div>"""
 
-    # ── Transcript appendix ───────────────────────────────────────────────────
+    # ── Transcript appendix ────────────────────────────────────────────────
     transcripts_html = ""
     for yt in (yt_analyses or []):
         transcript = yt.get("transcript", "")
         if not transcript:
             continue
-        # Clean up transcript for display
-        # Split into paragraphs every ~300 words for readability
-        words = transcript.split()
-        chunks = []
-        for i in range(0, len(words), 300):
-            chunks.append(" ".join(words[i:i+300]))
+        words  = transcript.split()
+        chunks = [" ".join(words[i:i+300]) for i in range(0, len(words), 300)]
         chunk_html = "".join(
             f'<p style="margin:0 0 12px;line-height:1.7">{c}</p>'
             for c in chunks
@@ -483,7 +468,7 @@ def build_morning_html(
           </div>
         </div>"""
 
-    # Expected move HTML section
+    # ── Expected move section ──────────────────────────────────────────────
     em_section_html = format_em_html(em_data or {})
 
     return f"""<!DOCTYPE html>
@@ -495,6 +480,7 @@ def build_morning_html(
   <p style="margin:4px 0 0;font-size:13px;color:#5F5E5A">{today_str} 7:30 AM ET &nbsp;|&nbsp; Portfolio: ${total_value:,.0f}</p>
   <p style="margin:4px 0 0;font-size:12px;color:#888">Reading material — trade confirmations arrive at 9:50 AM in the Opening Report</p>
 </div>
+{futures_html}
 {overview_html}
 {em_section_html}
 {narrative_html}
@@ -505,7 +491,8 @@ def build_morning_html(
 {news_section}
 {transcripts_html}
 <div style="border-top:0.5px solid #D3D1C7;padding-top:12px;margin-top:8px;font-size:11px;color:#888">
-  Pre-market data is low-volume and may not reflect open prices. Wait for 9:50 AM opening report before executing.
+  Pre-market data is low-volume and may not reflect open prices.
+  Wait for 9:50 AM opening report before executing.
 </div>
 </body></html>"""
 
@@ -521,6 +508,8 @@ def build_morning_text(
     total_value: float,
     yt_analyses: list = None,
     em_data: dict = None,
+    futures_snap: list = None,
+    top_headline: dict = None,
 ) -> str:
     spy_gap = market_overview.get("spy", {}).get("gap_pct", 0)
     qqq_gap = market_overview.get("qqq", {}).get("gap_pct", 0)
@@ -531,86 +520,86 @@ def build_morning_text(
         "═" * 62,
         f"  MORNING INTELLIGENCE — {today_str} 7:30 AM ET",
         f"  Portfolio: ${total_value:,.0f}",
-        "═" * 62, "",
+        "═" * 62,
+        "",
+    ]
+
+    # ── Futures snapshot ───────────────────────────────────────────────────
+    if futures_snap:
+        lines += ["MARKET SNAPSHOT:", format_futures_text(futures_snap), ""]
+    if top_headline and top_headline.get("title"):
+        lines += [f"  📰 {top_headline['title']}", ""]
+
+    lines += [
         f"  SPY {spy_gap:+.2f}%  |  QQQ {qqq_gap:+.2f}%  |  VIX {vix} ({vix_lvl})",
         "",
         f"  {morning_narrative}",
         "",
     ]
 
-    # YouTube sections
+    # ── Expected move ──────────────────────────────────────────────────────
+    em_text = format_em_text(em_data or {})
+    if em_text:
+        lines += [em_text, ""]
+
+    # ── YouTube sections ───────────────────────────────────────────────────
     for yt_analysis in (yt_analyses or []):
-      if not yt_analysis.get("error"):
-        bias = yt_analysis.get("overall_bias","?").upper()
-        lines += [
-            f"  📺 FIGURING OUT MONEY — {yt_analysis.get('published','')} | {bias} BIAS",
-            "  Title: " + yt_analysis.get("title",""),
-            f"  {yt_analysis.get('summary','')}",
-        ]
-        week = yt_analysis.get("week_outlook","")
-        if week:
-            lines.append(f"  Week: {week}")
-        pts = yt_analysis.get("price_targets",[])
-        if pts:
-            lines.append("  Price targets / expected ranges:")
-            for pt in pts:
-                sym  = pt.get("symbol","")
-                erl  = pt.get("expected_range_low") or pt.get("target_low")
-                erh  = pt.get("expected_range_high") or pt.get("target_high")
-                sup  = pt.get("support")
-                res  = pt.get("resistance")
-                tf   = pt.get("timeframe","")
-                rng  = f"${erl:.2f}–${erh:.2f}" if erl and erh else "—"
-                lines.append(
-                    f"    {sym:6} range={rng:15} "
-                    f"sup={f'${sup:.2f}' if sup else '—':8} "
-                    f"res={f'${res:.2f}' if res else '—':8} {tf}"
-                )
-        cr = yt_analysis.get("cross_reference",[])
-        conflicts = [x for x in cr if x["alignment"] == "conflict"]
-        if conflicts:
-            lines.append("  ⚠️  SIGNAL CONFLICTS vs your positions:")
-            for x in conflicts:
-                lines.append(
-                    f"    {x['symbol']:6} FOM:{x['yt_sentiment']:8} "
-                    f"Your signal:{x.get('eod_signal','—'):12} ← REVIEW"
-                )
-        lines.append(f"  Watch: {yt_analysis.get('url','')}")
-        lines.append("")
+        if not yt_analysis.get("error"):
+            bias = yt_analysis.get("overall_bias","?")
+            lines += [
+                f"{'─'*62}",
+                f"  📺 {yt_analysis.get('channel','')} — {yt_analysis.get('title','')}",
+                f"  Bias: {bias.upper()}  |  {yt_analysis.get('published','')}",
+                f"  {yt_analysis.get('summary','')}",
+            ]
+            if yt_analysis.get("week_outlook"):
+                lines.append(f"  Week outlook: {yt_analysis['week_outlook']}")
+            lines.append("")
 
-    # Expected move section
-    if em_data:
-        lines.append(format_em_text(em_data))
-        lines.append("")
-
+    # ── Earnings alerts ────────────────────────────────────────────────────
     if earnings_alerts:
-        lines.append("  ⚠️ EARNINGS ALERTS (BUY blocked):")
+        lines += [f"{'─'*62}", "⚠️  EARNINGS ALERTS:"]
         for e in earnings_alerts:
-            lines.append(f"    {e['symbol']:6} {e['note']}")
+            lines.append(f"  {e['symbol']:6} — {e['note']}  [{e['account']}]")
         lines.append("")
 
+    # ── Watchlist ──────────────────────────────────────────────────────────
     if active_signals:
-        lines.append("  TODAY'S WATCHLIST (from last night's EOD signals):")
+        lines += [f"{'─'*62}", "TODAY'S WATCHLIST:"]
         for s in sorted(active_signals, key=lambda x: -x["conviction"]):
             pm = s.get("gap_pct", 0)
-            news = news_data.get(s["symbol"], {})
-            sent_e = sentiment_emoji(news.get("sentiment", 0))
             lines.append(
-                f"  {'🟢' if 'BUY' in s['eod_signal'] else '🔴'} "
-                f"{s['symbol']:6} {s['eod_signal']:12} cv={s['conviction']:3d} "
-                f"pm={pm:+.1f}%  news:{sent_e}  ${s.get('suggested_usd',0):,.0f}  [{s['account']}]"
+                f"  {s['symbol']:6} {s['eod_signal']:12} cv={s['conviction']:3d} "
+                f"pre-mkt:{pm:+.1f}%  [{s['account']}]"
             )
         lines.append("")
 
+    # ── Gap alerts ─────────────────────────────────────────────────────────
     if gap_alerts:
-        lines.append("  PRE-MARKET MOVES:")
-        for g in sorted(gap_alerts, key=lambda x: -abs(x["gap_pct"]))[:8]:
-            lines.append(f"    {g['symbol']:6} {g['gap_pct']:+.1f}%  {g['gap_label']:12} [{g['account']}]")
+        lines += [f"{'─'*62}", "PRE-MARKET MOVES:"]
+        for g in sorted(gap_alerts, key=lambda x: -abs(x["gap_pct"])):
+            lines.append(
+                f"  {g['symbol']:6} {g['gap_pct']:+.2f}%  "
+                f"{gap_significance(g['gap_pct'],g.get('asset_class','etf')):12}  "
+                f"EOD:{g.get('eod_signal','HOLD'):12}  [{g['account']}]"
+            )
+        lines.append("")
+
+    # ── News sentiment ─────────────────────────────────────────────────────
+    news_items = [(sym, nd) for sym, nd in news_data.items() if nd.get("headlines")]
+    if news_items:
+        lines += [f"{'─'*62}", "NEWS SENTIMENT:"]
+        for sym, nd in sorted(news_items, key=lambda x: -abs(x[1].get("sentiment",0))):
+            emoji = sentiment_emoji(nd.get("sentiment", 0))
+            lines.append(
+                f"  {sym:6} {emoji} {nd.get('sentiment_label','neutral'):14}  "
+                f"{nd.get('sentiment_summary','')[:50]}"
+            )
         lines.append("")
 
     lines += [
         "─" * 62,
-        "  Trade confirmations at 9:50 AM in the Opening Report.",
+        "  Pre-market data is low-volume — wait for 9:50 AM opening report.",
         "═" * 62,
     ]
     return "\n".join(lines)
@@ -630,21 +619,19 @@ def run():
     ollama_ok = check_ollama_available()
 
     # Collect all symbols across tradeable accounts
-    # Load symbols from symbols.txt (full watchlist), fall back to portfolio positions
     from run_eod import load_symbols_for_account
     all_symbols    = set()
-    symbol_account = {}  # symbol → account_name (first account wins for shared symbols)
-    symbol_class   = {}  # symbol → asset_class
+    symbol_account = {}
+    symbol_class   = {}
     for acct_name, acct_cfg in tradeable.items():
         syms = load_symbols_for_account(acct_name)
         if not syms:
             syms = list(acct_cfg.get("positions", {}).keys())
         for sym in syms:
             all_symbols.add(sym)
-            if sym not in symbol_account:  # first account wins
+            if sym not in symbol_account:
                 symbol_account[sym] = acct_name
                 symbol_class[sym]   = acct_cfg.get("asset_class", "etf")
-        # Also include portfolio positions (for position context)
         for sym in acct_cfg.get("positions", {}).keys():
             all_symbols.add(sym)
             if sym not in symbol_account:
@@ -653,15 +640,38 @@ def run():
 
     logger.info(f"Portfolio: ${total_value:,.0f} | {len(all_symbols)} symbols")
 
-    # Pre-market quotes
+    # ── Futures + headline ─────────────────────────────────────────────────
+    logger.info("Fetching futures + top headline...")
+    futures_snap = get_futures_snapshot()
+    top_headline = get_top_headline()
+    fetched = sum(1 for f in futures_snap if f.get("price") is not None)
+    logger.info(f"Futures: {fetched}/8 fetched | headline: {'yes' if top_headline.get('title') else 'no'}")
+
+    # ── Pre-market quotes ──────────────────────────────────────────────────
     logger.info("Fetching pre-market quotes...")
     premarket = get_premarket_batch(list(all_symbols))
     market_ov = get_market_overview()
-    logger.info(f"SPY {market_ov['spy']['gap_pct']:+.2f}% | "
-                f"QQQ {market_ov['qqq']['gap_pct']:+.2f}% | "
-                f"VIX {market_ov['vix']['price']}")
+    logger.info(
+        f"SPY {market_ov['spy']['gap_pct']:+.2f}% | "
+        f"QQQ {market_ov['qqq']['gap_pct']:+.2f}% | "
+        f"VIX {market_ov['vix']['price']}"
+    )
 
-    # News sentiment for active signals + biggest gaps
+    # ── Expected move ──────────────────────────────────────────────────────
+    logger.info("Fetching expected move...")
+    em_data = get_market_expected_moves()
+
+    # ── YouTube ────────────────────────────────────────────────────────────
+    logger.info("Fetching YouTube analyses...")
+    yt_analyses = []
+    try:
+        yt_analyses = fetch_all_channels(list(symbol_account.keys()), signal_log)
+    except Exception as e:
+        logger.warning(f"YouTube fetch failed: {e}")
+
+    # ── News sentiment ─────────────────────────────────────────────────────
+    # Fetch news for: active signals + all held positions (capped at 12 total)
+    # Do NOT gate on signal_log — on first run it's empty and we'd get no news.
     logger.info("Fetching news sentiment...")
     active_signal_syms = {
         k.split(":")[1]
@@ -669,97 +679,71 @@ def run():
         if v.get("signal") in ("BUY","SELL","STRONG_BUY","STRONG_SELL")
         and not v.get("blocked_by")
     }
-    gap_syms = {
-        sym for sym, q in premarket.items()
-        if abs(q.get("gap_pct", 0)) >= 1.0
+    held_syms = {
+        sym
+        for acct_cfg in tradeable.values()
+        for sym in acct_cfg.get("positions", {}).keys()
     }
-    # Cap news to active signal symbols only (max 8) — gap symbols excluded
-    # to keep the morning run under 2 minutes. Keyword fallback runs instantly
-    # without Ollama; Ollama grading fires only if available and under the cap.
-    news_syms = list(active_signal_syms)[:8]
-    logger.info(f"Fetching news for {len(news_syms)} active-signal symbols (capped at 8)...")
-    news_data = fetch_news_batch(news_syms)   # always fetch — keyword fallback if Ollama down
-    logger.info(f"News fetched for {len(news_data)} symbols")
+    # Priority: active signals first, then held positions, cap at 12
+    news_priority = list(active_signal_syms) + [s for s in held_syms if s not in active_signal_syms]
+    news_syms = news_priority[:12]
+    news_data = fetch_news_batch(news_syms) if news_syms else {}
+    logger.info(f"News fetched for {len(news_data)} symbols ({len(active_signal_syms)} active signals + {len(held_syms)} held)")
 
-    # ── Options implied expected move (SPY + QQQ) ────────────────────────────
-    logger.info("Fetching options expected moves...")
-    em_data = get_market_expected_moves()
-
-    # ── YouTube: FiguringOutMoney latest video ────────────────────────────────
-    logger.info("Checking YouTube channels for new videos...")
-    yt_analyses = []
-    if ollama_ok:
-        try:
-            yt_analyses = fetch_all_channels(
-                portfolio_symbols=list(all_symbols),
-                signal_log=load_signal_log(),
-            )
-            for yt in yt_analyses:
-                if not yt.get("error"):
-                    pts = yt.get("price_targets", [])
-                    logger.info(f"  📺 {yt['channel']}: '{yt['title']}' "
-                                f"— {yt.get('overall_bias','?')} bias "
-                                f"| {len(pts)} price target(s)")
-                else:
-                    logger.info(f"  📺 {yt['channel']}: '{yt['title']}' — transcript unavailable")
-            if not yt_analyses:
-                logger.info("  No new videos from any channel")
-        except Exception as e:
-            logger.warning(f"YouTube fetch failed: {e}")
-    else:
-        logger.info("YouTube analysis skipped (Ollama unavailable)")
-
-    # Build gap alerts list — only include genuine pre-market prices
-    # is_available=True means we got an actual pre-market quote, not just closing price
+    # ── Gap alerts ─────────────────────────────────────────────────────────
     gap_alerts = []
     for sym, q in premarket.items():
-        gap = q.get("gap_pct", 0)
-        # Only show if we have a real pre-market price AND it moved meaningfully
-        if abs(gap) >= 0.3 and q.get("is_available", False):
-            eod_key = f"{symbol_account.get(sym,'')}:{sym}"
-            eod_sig = signal_log.get(eod_key, {}).get("signal", "HOLD")
-            gap_alerts.append({
-                "symbol":     sym,
-                "gap_pct":    gap,
-                "gap_label":  q.get("gap_label", "flat"),
-                "data_type":  q.get("data_type", "pre-market"),
-                "account":    symbol_account.get(sym, ""),
-                "asset_class": symbol_class.get(sym, "etf"),
-                "eod_signal": eod_sig,
-            })
+        gap_pct = q.get("gap_pct", 0)
+        if abs(gap_pct) < 0.3:
+            continue
+        acct_name   = symbol_account.get(sym, "")
+        asset_class = symbol_class.get(sym, "etf")
+        eod_sig     = signal_log.get(f"{acct_name}:{sym}", {}).get("signal", "HOLD")
+        gap_alerts.append({
+            "symbol":     sym,
+            "gap_pct":    gap_pct,
+            "gap_label":  q.get("gap_label", "flat"),
+            "account":    acct_name,
+            "asset_class":asset_class,
+            "eod_signal": eod_sig,
+        })
     gap_alerts.sort(key=lambda x: -abs(x["gap_pct"]))
+    logger.info(f"Gap alerts: {len(gap_alerts)} symbols with gap >= 0.3%")
 
-    # Build active signals list
+    # ── Active signals ─────────────────────────────────────────────────────
+    # Show BUY/SELL signals first; if signal_log is empty (first run),
+    # fall back to showing all held positions so watchlist is never blank.
     active_signals = []
     for acct_name, acct_cfg in tradeable.items():
-        acct_val = acct_cfg.get("account_value", 0)
         for sym in acct_cfg.get("positions", {}).keys():
             key = f"{acct_name}:{sym}"
             sig = signal_log.get(key, {})
-            if sig.get("signal") in ("BUY","SELL","STRONG_BUY","STRONG_SELL") \
-               and not sig.get("blocked_by"):
-                pm_q = premarket.get(sym, {})
-                active_signals.append({
-                    "symbol":       sym,
-                    "eod_signal":   sig.get("signal","HOLD"),
-                    "conviction":   sig.get("conviction", 50),
-                    "account":      acct_name,
-                    "gap_pct":      pm_q.get("gap_pct", 0),
-                    "suggested_usd": sig.get("suggested_usd", 0),
-                })
+            action = sig.get("signal", "HOLD")
+            # Include actionable signals OR all positions if signal_log empty
+            if action in ("BUY","SELL","STRONG_BUY","STRONG_SELL") or not signal_log:
+                if not sig.get("blocked_by"):
+                    pm_q = premarket.get(sym, {})
+                    active_signals.append({
+                        "symbol":        sym,
+                        "eod_signal":    action,
+                        "conviction":    sig.get("conviction", 50),
+                        "account":       acct_name,
+                        "gap_pct":       pm_q.get("gap_pct", 0),
+                        "suggested_usd": sig.get("suggested_usd", 0),
+                    })
+    logger.info(f"Active signals: {len(active_signals)} ({'from signal_log' if signal_log else 'first-run fallback — run run_eod.py tonight'})") 
 
-    # Earnings alerts
+    # ── Earnings alerts ────────────────────────────────────────────────────
     earnings_alerts = []
     for sym in all_symbols:
         if is_near_earnings(sym):
-            acct = symbol_account.get(sym, "")
             earnings_alerts.append({
                 "symbol":  sym,
-                "account": acct,
+                "account": symbol_account.get(sym, ""),
                 "note":    "Earnings within 48h — BUY signal blocked",
             })
 
-    # Morning narrative
+    # ── Morning narrative ──────────────────────────────────────────────────
     morning_narrative = _ollama_morning_narrative(
         ollama_ok, market_ov, active_signals, gap_alerts,
         [
@@ -773,22 +757,26 @@ def run():
         ]
     )
 
-    # Build + deliver
+    # ── Build + deliver ────────────────────────────────────────────────────
     html_report = build_morning_html(
         today_str, market_ov, active_signals, gap_alerts,
         news_data, earnings_alerts, morning_narrative, total_value,
         yt_analyses=yt_analyses, em_data=em_data,
+        futures_snap=futures_snap, top_headline=top_headline,
     )
     text_report = build_morning_text(
         today_str, market_ov, active_signals, gap_alerts,
         news_data, earnings_alerts, morning_narrative, total_value,
         yt_analyses=yt_analyses, em_data=em_data,
+        futures_snap=futures_snap, top_headline=top_headline,
     )
 
     active_count = len(active_signals)
-    subject = (f"SWING SIGNAL: Morning Intel {today_str} — "
-               f"SPY {market_ov['spy']['gap_pct']:+.1f}% | "
-               f"{active_count} signal{'s' if active_count!=1 else ''} to watch")
+    subject = (
+        f"SWING SIGNAL: Morning Intel {today_str} — "
+        f"SPY {market_ov['spy']['gap_pct']:+.1f}% | "
+        f"{active_count} signal{'s' if active_count!=1 else ''} to watch"
+    )
 
     logger.info(f"\n{text_report}")
     deliver_report(subject, html_report, text_report)
