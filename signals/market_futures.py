@@ -4,20 +4,24 @@ signals/market_futures.py — CNBC-style market snapshot + top headline
 Fetches 8 market indicators matching the CNBC top bar:
   DOW FUT  S&P FUT  NAS FUT  OIL  US 10-YR  GOLD  SILVER  BITCOIN
 
-Pricing notes:
-  - Index futures (DOW/S&P/NAS): uses ^DJI / ^GSPC / ^IXIC (cash index level)
-    with E-mini futures (YM=F / ES=F / NQ=F) as fallback for after-hours.
-    CNBC shows the cash index level during market hours and near-term futures
-    pre/post market — this approach matches that behaviour.
-  - Change % is always vs the prior REGULAR session close (not futures settlement)
-    so the sign matches what CNBC shows.
-  - OIL: CL=F (WTI front-month crude)
-  - US 10-YR: ^TNX (yield, displayed as %)
-  - GOLD/SILVER: GC=F / SI=F
-  - BITCOIN: BTC-USD
+Two modes:
+  mode="premarket" (morning report, default)
+    - Index tickers: YM=F / ES=F / NQ=F (E-mini futures — update pre-market)
+      Cash indices (^DJI/^GSPC/^IXIC) don't update until 9:30 AM ET
+    - Change % vs their own prior futures session close
+    - Labels: "DOW FUT / S&P FUT / NAS FUT"
 
-Also scrapes the top market headline from CNBC RSS.
-Caches for 10 minutes.
+  mode="close" (EOD report)
+    - Index tickers: ^DJI / ^GSPC / ^IXIC (cash index closing levels)
+    - Change % vs prior regular session close — matches CNBC end-of-day
+    - Labels: "DOW / S&P 500 / NASDAQ"
+
+Both modes: OIL=CL=F, US 10-YR=^TNX, GOLD=GC=F, SILVER=SI=F, BITCOIN=BTC-USD
+
+Headline: always fetched fresh (no cache) — sorted by age, freshest article wins.
+Price snapshot: cached 10 min per mode — delete cache/futures_cache.json to force refresh.
+
+If futures look wrong, delete cache/futures_cache.json and rerun.
 """
 
 import json
@@ -32,16 +36,18 @@ logger = logging.getLogger(__name__)
 CACHE_FILE  = os.path.join(os.path.dirname(__file__), "..", "cache", "futures_cache.json")
 CACHE_TTL_M = 10
 
-# (premarket_label, close_label, primary_ticker, fallback_ticker)
+# (premarket_label, close_label, premarket_ticker, close_ticker)
+# premarket: use futures contracts directly — cash indices don't update pre-market
+# close:     use cash index levels — more accurate for EOD reporting
 FUTURES_TICKERS = [
-    ("DOW FUT",  "DOW",      "^DJI",    "YM=F"),
-    ("S&P FUT",  "S&P 500",  "^GSPC",   "ES=F"),
-    ("NAS FUT",  "NASDAQ",   "^IXIC",   "NQ=F"),
-    ("OIL",      "OIL",      "CL=F",    None),
-    ("US 10-YR", "US 10-YR", "^TNX",    None),
-    ("GOLD",     "GOLD",     "GC=F",    None),
-    ("SILVER",   "SILVER",   "SI=F",    None),
-    ("BITCOIN",  "BITCOIN",  "BTC-USD", None),
+    ("DOW FUT",  "DOW",      "YM=F",    "^DJI"),
+    ("S&P FUT",  "S&P 500",  "ES=F",    "^GSPC"),
+    ("NAS FUT",  "NASDAQ",   "NQ=F",    "^IXIC"),
+    ("OIL",      "OIL",      "CL=F",    "CL=F"),
+    ("US 10-YR", "US 10-YR", "^TNX",    "^TNX"),
+    ("GOLD",     "GOLD",     "GC=F",    "GC=F"),
+    ("SILVER",   "SILVER",   "SI=F",    "SI=F"),
+    ("BITCOIN",  "BITCOIN",  "BTC-USD", "BTC-USD"),
 ]
 
 
@@ -132,13 +138,15 @@ def get_futures_snapshot(force: bool = False, mode: str = "premarket") -> list[d
             pass
 
     results = []
-    for premarket_label, close_label, primary, fallback in FUTURES_TICKERS:
-        label = close_label if mode == "close" else premarket_label
-        price, prev = _fetch_one(primary, mode=mode)
+    for premarket_label, close_label, premarket_ticker, close_ticker in FUTURES_TICKERS:
+        label  = close_label if mode == "close" else premarket_label
+        ticker = close_ticker if mode == "close" else premarket_ticker
+        price, prev = _fetch_one(ticker, mode=mode)
 
-        # Try fallback ticker if primary failed
-        if price is None and fallback:
-            price, prev = _fetch_one(fallback, mode=mode)
+        # If primary failed, try the other ticker as fallback
+        fallback_ticker = premarket_ticker if mode == "close" else close_ticker
+        if price is None and fallback_ticker != ticker:
+            price, prev = _fetch_one(fallback_ticker, mode=mode)
 
         entry = {
             "label":         label,
@@ -184,8 +192,10 @@ def get_futures_snapshot(force: bool = False, mode: str = "premarket") -> list[d
 
 def get_top_headline() -> dict:
     """
-    Scrapes top market headline from CNBC RSS, falls back to Yahoo Finance.
-    Returns: {title, url, source} or {}
+    Fetches the freshest market headline from CNBC RSS or Yahoo Finance.
+    Always fetches live — no caching — so each report gets the latest article.
+    Filters out articles older than 24 hours to avoid stale headlines.
+    Returns: {title, url, source, age_hours} or {}
     """
     feeds = [
         ("CNBC",
@@ -197,6 +207,11 @@ def get_top_headline() -> dict:
     try:
         import requests
         from xml.etree import ElementTree as ET
+        from email.utils import parsedate_to_datetime
+        from datetime import timezone
+
+        now_utc = datetime.utcnow()
+
         for source, url in feeds:
             try:
                 resp = requests.get(
@@ -207,11 +222,34 @@ def get_top_headline() -> dict:
                 if resp.status_code != 200:
                     continue
                 root = ET.fromstring(resp.content)
+
+                # Collect all items with timestamps, pick the freshest
+                candidates = []
                 for item in root.iter("item"):
-                    title = item.findtext("title", "").strip()
-                    link  = item.findtext("link",  "").strip()
-                    if title and len(title) > 20:
-                        return {"title": title, "url": link, "source": source}
+                    title   = item.findtext("title", "").strip()
+                    link    = item.findtext("link",  "").strip()
+                    pub_str = item.findtext("pubDate", "").strip()
+                    if not title or len(title) < 20:
+                        continue
+                    age_h = 999.0
+                    if pub_str:
+                        try:
+                            pub_dt = parsedate_to_datetime(pub_str)
+                            # Normalize to naive UTC
+                            if pub_dt.tzinfo:
+                                pub_dt = pub_dt.astimezone(timezone.utc).replace(tzinfo=None)
+                            age_h = (now_utc - pub_dt).total_seconds() / 3600
+                        except Exception:
+                            pass
+                    candidates.append((age_h, title, link))
+
+                # Sort by age, take freshest
+                candidates.sort(key=lambda x: x[0])
+                for age_h, title, link in candidates:
+                    if age_h <= 48:  # skip anything older than 48h
+                        logger.debug(f"Headline ({source}, {age_h:.1f}h old): {title[:60]}")
+                        return {"title": title, "url": link, "source": source, "age_hours": round(age_h, 1)}
+
             except Exception as e:
                 logger.debug(f"headline fetch failed ({source}): {e}")
     except ImportError:
