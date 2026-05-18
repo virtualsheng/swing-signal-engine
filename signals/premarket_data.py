@@ -1,21 +1,24 @@
 """
-premarket_data.py — Pre-market quotes, gap analysis, futures
-─────────────────────────────────────────────────────────────
+premarket_data.py — Pre-market quotes, gap analysis, market overview
+─────────────────────────────────────────────────────────────────────
 Fetches:
   - Pre-market / extended hours price for each symbol
-  - SPY / QQQ futures-implied direction
-  - VIX level (fear gauge)
-  - Gap size vs previous close
-  - Gap fill probability (historical base rate)
+  - SPY / QQQ pre-market gap vs prior close
+  - VIX level
+  - Gap size classification
 
-Uses yfinance which includes pre/post market data.
+Uses yfinance with prepost=True (1m bars) for reliable pre-market prices.
+fast_info.pre_market_price is unreliable — it frequently returns None
+even when pre-market is active. 1-minute bars with prepost=True are
+the correct approach.
+
 Caches for 15 min to avoid hammering Yahoo during the morning run.
 """
 
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import yfinance as yf
 
@@ -39,28 +42,112 @@ def _save_cache(cache: dict):
         json.dump(cache, f)
 
 
+def _get_premarket_price_and_prev(symbol: str) -> tuple[float | None, float | None]:
+    """
+    Returns (premarket_price, prev_regular_close).
+
+    Strategy:
+    1. Fetch 2d of 1-minute bars with prepost=True
+    2. Split into regular-session bars and pre-market bars
+    3. premarket_price = last bar before 9:30 AM today ET
+    4. prev_close      = last bar of the prior regular session (<=4:00 PM yesterday)
+
+    Falls back to fast_info if bar fetch fails.
+    """
+    import pytz
+    et = pytz.timezone("America/New_York")
+    now_et = datetime.now(et)
+
+    try:
+        ticker = yf.Ticker(symbol)
+
+        # ── Try 1-min bars with pre/post market ──────────────────────────
+        hist = ticker.history(period="2d", interval="1m", prepost=True)
+
+        if hist is not None and not hist.empty:
+            # Ensure timezone-aware index
+            if hist.index.tz is None:
+                hist.index = hist.index.tz_localize("UTC").tz_convert(et)
+            else:
+                hist.index = hist.index.tz_convert(et)
+
+            today = now_et.date()
+
+            # Regular session: 9:30–16:00 ET
+            regular_mask = (
+                (hist.index.time >= __import__("datetime").time(9, 30)) &
+                (hist.index.time <= __import__("datetime").time(16, 0))
+            )
+            # Pre-market today: before 9:30 AM
+            premarket_mask = (
+                hist.index.date == today
+            ) & (
+                hist.index.time < __import__("datetime").time(9, 30)
+            )
+
+            premarket_bars = hist[premarket_mask]
+            regular_bars   = hist[regular_mask & (hist.index.date < today)]
+
+            premarket_price = None
+            prev_close      = None
+
+            if not premarket_bars.empty:
+                premarket_price = float(premarket_bars["Close"].iloc[-1])
+
+            if not regular_bars.empty:
+                prev_close = float(regular_bars["Close"].iloc[-1])
+            else:
+                # Fallback: fast_info previous_close
+                info = ticker.fast_info
+                prev_close = (
+                    getattr(info, "regularMarketPreviousClose", None) or
+                    getattr(info, "previous_close", None)
+                )
+                if prev_close:
+                    prev_close = float(prev_close)
+
+            return premarket_price, prev_close
+
+    except Exception as e:
+        logger.debug(f"{symbol}: bar-based premarket fetch failed — {e}")
+
+    # ── Fallback: fast_info ───────────────────────────────────────────────
+    try:
+        info  = yf.Ticker(symbol).fast_info
+        price = getattr(info, "pre_market_price", None)
+        prev  = (
+            getattr(info, "regularMarketPreviousClose", None) or
+            getattr(info, "previous_close", None)
+        )
+        return (float(price) if price else None,
+                float(prev)  if prev  else None)
+    except Exception as e:
+        logger.debug(f"{symbol}: fast_info fallback failed — {e}")
+
+    return None, None
+
+
 def get_premarket_quote(symbol: str) -> dict:
     """
     Get pre-market price, change, and gap vs previous close.
     Returns:
       {
-        "symbol":        str,
-        "prev_close":    float,
+        "symbol":          str,
+        "prev_close":      float,
         "premarket_price": float | None,
-        "gap_pct":       float,   # % change from prev close (pre-market)
-        "gap_label":     str,     # "gap up" | "gap down" | "flat"
-        "is_available":  bool,
+        "gap_pct":         float,
+        "gap_label":       str,    # "gap up" | "gap down" | "flat"
+        "is_available":    bool,
       }
     """
-    from datetime import datetime, time as dtime
     import pytz
-    now_et = datetime.now(pytz.timezone("America/New_York"))
-    hour   = now_et.hour
-    # Pre-market: 4:00–9:30 AM ET  |  Market open: 9:30–4:00 PM ET
-    # After hours: 4:00–8:00 PM ET  |  Overnight/weekend: else
-    if 4 <= hour < 9 or (hour == 9 and now_et.minute < 30):
+    now_et    = datetime.now(pytz.timezone("America/New_York"))
+    hour      = now_et.hour
+    minute    = now_et.minute
+
+    if 4 <= hour < 9 or (hour == 9 and minute < 30):
         data_type = "pre-market"
-    elif (hour == 9 and now_et.minute >= 30) or (9 < hour < 16):
+    elif (hour == 9 and minute >= 30) or (9 < hour < 16):
         data_type = "intraday"
     elif 16 <= hour < 20:
         data_type = "after-hours"
@@ -74,35 +161,25 @@ def get_premarket_quote(symbol: str) -> dict:
         "gap_pct":         0.0,
         "gap_label":       "flat",
         "is_available":    False,
-        "data_type":       data_type,   # what this price actually represents
+        "data_type":       data_type,
     }
-    try:
-        ticker    = yf.Ticker(symbol)
-        info      = ticker.fast_info
 
-        prev_close      = getattr(info, "previous_close",      None) or getattr(info, "regularMarketPreviousClose", None)
-        premarket_price = getattr(info, "pre_market_price",    None)
-        regular_price   = getattr(info, "last_price",          None)
+    premarket_price, prev_close = _get_premarket_price_and_prev(symbol)
 
-        if prev_close:
-            result["prev_close"] = float(prev_close)
+    if prev_close:
+        result["prev_close"] = round(float(prev_close), 4)
 
-        # Only use genuine pre-market price — do NOT fall back to regular
-        # price. Falling back produces the daily return, not a gap.
-        if premarket_price and prev_close and float(prev_close) > 0:
-            gap_pct = (float(premarket_price) - float(prev_close)) / float(prev_close) * 100
-            result["premarket_price"] = float(premarket_price)
-            result["gap_pct"]         = round(gap_pct, 2)
-            result["is_available"]    = True
-            if gap_pct > 0.3:
-                result["gap_label"] = "gap up"
-            elif gap_pct < -0.3:
-                result["gap_label"] = "gap down"
-            else:
-                result["gap_label"] = "flat"
-
-    except Exception as e:
-        logger.debug(f"{symbol}: pre-market quote failed — {e}")
+    if premarket_price and prev_close and float(prev_close) > 0:
+        gap_pct = (float(premarket_price) - float(prev_close)) / float(prev_close) * 100
+        result["premarket_price"] = round(float(premarket_price), 4)
+        result["gap_pct"]         = round(gap_pct, 2)
+        result["is_available"]    = True
+        if gap_pct > 0.3:
+            result["gap_label"] = "gap up"
+        elif gap_pct < -0.3:
+            result["gap_label"] = "gap down"
+        else:
+            result["gap_label"] = "flat"
 
     return result
 
@@ -110,12 +187,11 @@ def get_premarket_quote(symbol: str) -> dict:
 def get_market_overview() -> dict:
     """
     Get SPY, QQQ, VIX pre-market levels for the market overview section.
-    Returns dict with market-wide context.
     """
     overview = {
-        "spy":  {"price": None, "gap_pct": 0.0},
-        "qqq":  {"price": None, "gap_pct": 0.0},
-        "vix":  {"price": None, "level": "normal"},
+        "spy":       {"price": None, "gap_pct": 0.0},
+        "qqq":       {"price": None, "gap_pct": 0.0},
+        "vix":       {"price": None, "level": "normal"},
         "timestamp": datetime.now().strftime("%H:%M ET"),
     }
 
@@ -123,10 +199,19 @@ def get_market_overview() -> dict:
         q = get_premarket_quote(sym)
         overview[key]["price"]   = q["premarket_price"] or q["prev_close"]
         overview[key]["gap_pct"] = q["gap_pct"]
+        logger.info(
+            f"  {sym}: prev_close={q['prev_close']:.2f}  "
+            f"premarket={q['premarket_price']}  "
+            f"gap={q['gap_pct']:+.2f}%  "
+            f"[{q['data_type']}]"
+        )
 
     try:
         vix_info  = yf.Ticker("^VIX").fast_info
-        vix_price = getattr(vix_info, "last_price", None) or getattr(vix_info, "regularMarketPrice", None)
+        vix_price = (
+            getattr(vix_info, "last_price",          None) or
+            getattr(vix_info, "regularMarketPrice",  None)
+        )
         if vix_price:
             vix_val = float(vix_price)
             overview["vix"]["price"] = round(vix_val, 1)
@@ -152,50 +237,45 @@ def get_premarket_batch(
     Fetch pre-market data for a list of symbols with caching.
     Returns {symbol: quote_dict}.
     """
-    cache = _load_cache()
-    now   = datetime.utcnow()
+    cache   = _load_cache()
+    now     = datetime.utcnow()
     results = {}
 
     for symbol in symbols:
         if not force and symbol in cache:
-            cached_at = datetime.fromisoformat(cache[symbol]["fetched_at"])
-            age_min = (now - cached_at).total_seconds() / 60
-            if age_min < CACHE_TTL_M:
-                results[symbol] = cache[symbol]["data"]
-                continue
+            try:
+                cached_at = datetime.fromisoformat(cache[symbol]["fetched_at"])
+                age_min   = (now - cached_at).total_seconds() / 60
+                if age_min < CACHE_TTL_M:
+                    results[symbol] = cache[symbol]["data"]
+                    continue
+            except Exception:
+                pass
 
-        quote = get_premarket_quote(symbol)
-        cache[symbol] = {"fetched_at": now.isoformat(), "data": quote}
-        results[symbol] = quote
+        quote            = get_premarket_quote(symbol)
+        cache[symbol]    = {"fetched_at": now.isoformat(), "data": quote}
+        results[symbol]  = quote
 
     _save_cache(cache)
     return results
 
 
 def gap_significance(gap_pct: float, asset_class: str = "etf") -> str:
-    """
-    Classify the significance of a gap for swing trade purposes.
-    ETFs move less than individual stocks so thresholds differ.
-    """
+    """Classify the significance of a gap for swing trade purposes."""
     if asset_class == "stocks":
-        if abs(gap_pct) >= 5: return "major"
-        if abs(gap_pct) >= 2: return "significant"
-        if abs(gap_pct) >= 1: return "moderate"
+        if abs(gap_pct) >= 5:   return "major"
+        if abs(gap_pct) >= 2:   return "significant"
+        if abs(gap_pct) >= 1:   return "moderate"
         return "minor"
-    else:  # etf
-        if abs(gap_pct) >= 3: return "major"
+    else:   # etf
+        if abs(gap_pct) >= 3:   return "major"
         if abs(gap_pct) >= 1.5: return "significant"
         if abs(gap_pct) >= 0.5: return "moderate"
         return "minor"
 
 
 def get_macro_events_today() -> list[dict]:
-    """
-    Returns a hardcoded list of today's known macro events.
-    In production this would pull from an economic calendar API.
-    For now returns placeholder — the AI narrative will handle
-    context from general knowledge.
-    """
+    """Placeholder for economic calendar integration."""
     return [
         {
             "time":   "Check CNBC/Bloomberg for today's schedule",

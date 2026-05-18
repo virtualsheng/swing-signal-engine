@@ -48,8 +48,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signals.data_fetcher  import fetch_batch
 from signals.signal_engine import get_technical_signal
 from signals.portfolio     import load_portfolio, get_tradeable_accounts
-from signals.expected_move import get_expected_move
+from signals.expected_move  import get_expected_move
+from signals.market_futures import get_futures_snapshot, get_top_headline,                                      format_futures_text, format_futures_html
 from notifications.notifier import deliver_report
+from run_eod               import load_symbols_for_account
 
 SIGNAL_LOG_FILE  = "cache/signal_log.json"
 MIN_CONVICTION   = int(os.getenv("SWING_MIN_CONVICTION", "65"))
@@ -65,24 +67,6 @@ def load_signal_log() -> dict:
     except Exception:
         return {}
 
-
-def load_symbols_for_account(account_name: str) -> list[str]:
-    """Read symbols from symbols.txt for this account section."""
-    symbols_file = os.path.join(os.path.dirname(__file__), "symbols.txt")
-    if not os.path.exists(symbols_file):
-        return []
-    symbols, in_section = [], False
-    with open(symbols_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith("#"):
-                in_section = account_name.lower() in line.lower()
-                continue
-            if in_section and line.upper() == line:
-                symbols.append(line)
-    return symbols
 
 
 def signal_label(action: str) -> str:
@@ -131,6 +115,11 @@ def run():
         return
 
     logger.info(f"Running prelim signals for {len(all_symbols)} symbols...")
+
+    # Fetch futures snapshot + top headline (CNBC-style market bar)
+    logger.info("Fetching futures + headline...")
+    futures_snap = get_futures_snapshot()
+    top_headline = get_top_headline()
 
     # Fetch near-close bars (same as EOD — yfinance returns latest available)
     bars = fetch_batch(list(all_symbols.keys()))
@@ -212,6 +201,13 @@ def run():
         "",
     ]
 
+    # Futures bar
+    futures_text = format_futures_text(futures_snap)
+    if futures_text.strip():
+        lines += ["MARKET SNAPSHOT:", futures_text, ""]
+    if top_headline.get("title"):
+        lines += [f"  📰 {top_headline['title']}", f"     {top_headline.get('url','')}", ""]
+
     if em_lines:
         lines += ["OPTIONS EXPECTED MOVE (today's range):", *em_lines, ""]
 
@@ -255,12 +251,18 @@ def run():
         "─" * 62,
     ]
 
-    text_report = "\n".join(lines)
-    html_report = ""
+    text_body = "\n".join(lines)
 
     # ── Deliver ────────────────────────────────────────────────────────────
     logger.info(f"Sending: {subject}")
-    deliver_report(subject, html_report, text_report)
+    html_body = (
+        "<html><body style='font-family:monospace;font-size:13px'>"
+        + format_futures_html(futures_snap, top_headline)
+        + "<pre style='font-size:12px;line-height:1.6'>"
+        + text_body
+        + "</pre></body></html>"
+    )
+    deliver_report(subject, html_body, text_body)
     logger.info("Done.")
 
 
