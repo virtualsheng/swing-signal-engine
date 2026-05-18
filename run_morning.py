@@ -53,11 +53,12 @@ from signals.news_fetcher    import fetch_news_batch, sentiment_emoji
 from signals.earnings_filter import is_near_earnings
 from signals.portfolio       import load_portfolio, get_tradeable_accounts
 from signals.ai_engine       import check_ollama_available
-from signals.market_futures  import (
+from signals.market_futures        import (
     get_futures_snapshot, get_top_headline,
     format_futures_text, format_futures_html,
 )
-from notifications.notifier  import deliver_report
+from signals.auto_update_portfolio import auto_update as auto_update_portfolio
+from notifications.notifier        import deliver_report
 
 SIGNAL_LOG_FILE = "cache/signal_log.json"
 
@@ -607,6 +608,9 @@ def build_morning_text(
 
 def run():
     logger.info("=== Morning Intelligence Engine — 7:30 AM ===")
+
+    # Auto-apply latest Fidelity CSV if found and newer than portfolio.json
+    auto_update_portfolio()
 
     portfolio   = load_portfolio()
     tradeable   = get_tradeable_accounts(portfolio)

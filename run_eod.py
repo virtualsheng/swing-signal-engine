@@ -59,10 +59,11 @@ from signals.report_builder  import (
     build_text_report, build_html_report,
     build_portfolio_summary, get_top_movers,
 )
-from signals.market_futures  import (
+from signals.market_futures        import (
     get_futures_snapshot, get_top_headline,
 )
-from notifications.notifier  import deliver_report
+from signals.auto_update_portfolio import auto_update as auto_update_portfolio
+from notifications.notifier        import deliver_report
 
 SIGNAL_LOG_FILE = "cache/signal_log.json"
 
@@ -312,6 +313,9 @@ def process_account(
 
 def run():
     logger.info("=== EOD Signal Engine — 4:15 PM ===")
+
+    # Auto-apply latest Fidelity CSV if found and newer than portfolio.json
+    auto_update_portfolio()
 
     portfolio   = load_portfolio()
     tradeable   = get_tradeable_accounts(portfolio)
