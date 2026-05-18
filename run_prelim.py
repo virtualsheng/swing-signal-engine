@@ -255,11 +255,12 @@ def run():
         "─" * 62,
     ]
 
-    text_body = "\n".join(lines)
+    text_report = "\n".join(lines)
+    html_report = ""
 
     # ── Deliver ────────────────────────────────────────────────────────────
     logger.info(f"Sending: {subject}")
-    deliver_report(subject=subject, text_body=text_body, html_body=None)
+    deliver_report(subject, html_report, text_report)
     logger.info("Done.")
 
 
