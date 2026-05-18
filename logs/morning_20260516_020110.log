@@ -1,9 +1,0 @@
-2026-05-16 02:01:11,362 | INFO | === Morning Intelligence Engine — 7:30 AM ===
-2026-05-16 02:01:21,046 | INFO | Portfolio: $753,814 | 33 symbols
-2026-05-16 02:01:21,047 | INFO | Fetching pre-market quotes...
-2026-05-16 02:01:22,329 | INFO | SPY -1.14% | QQQ -1.50% | VIX 18.4
-2026-05-16 02:01:22,329 | INFO | Fetching news sentiment...
-2026-05-16 02:01:22,330 | INFO | Fetching news for 8 active-signal symbols (capped at 8)...
-2026-05-16 02:01:39,592 | WARNING | AMAT: news fetch failed — name '_keyword_sentiment' is not defined
-2026-05-16 02:01:56,841 | WARNING | VUG: news fetch failed — name '_keyword_sentiment' is not defined
-2026-05-16 02:02:14,029 | WARNING | DBMF: news fetch failed — name '_keyword_sentiment' is not defined
