@@ -1,9 +1,0 @@
-2026-05-16 02:03:28,486 | INFO | === Morning Intelligence Engine — 7:30 AM ===
-2026-05-16 02:03:50,151 | INFO | Portfolio: $753,814 | 33 symbols
-2026-05-16 02:03:50,151 | INFO | Fetching pre-market quotes...
-2026-05-16 02:04:03,516 | INFO | SPY -1.14% | QQQ -1.50% | VIX 18.4
-2026-05-16 02:04:03,517 | INFO | Fetching news sentiment...
-2026-05-16 02:04:03,517 | INFO | Fetching news for 8 active-signal symbols (capped at 8)...
-2026-05-16 02:06:21,374 | INFO | News fetched for 8 symbols
-2026-05-16 02:06:22,409 | ERROR | HTTP Error 404: {"quoteSummary":{"result":null,"error":{"code":"Not Found","description":"No fundamentals data found for symbol: VUG"}}}
-2026-05-16 02:06:22,890 | ERROR | HTTP Error 404: {"quoteSummary":{"result":null,"error":{"code":"Not Found","description":"No fundamentals data found for symbol: AVUV"}}}
