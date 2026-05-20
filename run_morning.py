@@ -417,6 +417,14 @@ def build_morning_html(
 
         week_outlook = yt_analysis.get("week_outlook","")
 
+        stale_badge = ""
+        if yt_analysis.get("_stale_cache"):
+            stale_badge = (
+                '<span style="background:#FAC775;color:#633806;font-size:10px;'
+                'padding:2px 6px;border-radius:4px;margin-left:8px">'
+                '⚠️ RSS unavailable — may not be latest video</span>'
+            )
+
         yt_sections_html += f"""
         <div style="margin-bottom:20px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
           <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;display:flex;align-items:center;gap:12px">
@@ -427,6 +435,7 @@ def build_morning_html(
               <span style="color:{bias_color};font-weight:500;font-size:12px;margin-left:8px">
                 {yt_analysis.get("overall_bias","").title()} bias
               </span>
+              {stale_badge}
             </div>
             <a href="{yt_analysis.get("url","")}" target="_blank"
                style="margin-left:auto;font-size:12px;color:#4ca3ff;text-decoration:none">Watch ↗</a>

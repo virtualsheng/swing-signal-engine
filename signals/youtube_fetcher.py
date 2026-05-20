@@ -61,7 +61,7 @@ COMMON_TICKERS = {
     "META","TSLA","AMD","INTC","TSM","AVGO","MU","LRCX","AMAT","PLTR",
     "GLD","GLDM","GDE","PSLV","IBIT","DBC","DBMF","VUG","AVUV",
     "RKLB","ARIS","GEV","JPM","PAAS","AG","SNDK","REMX","EWT","EWY",
-    "EWJV","GRID","NANR","SPMO","UFO","URA","DRAM","QQQM",
+    "EWJV","GRID","NANR","SPMO","UFO","URA","DRAM","QQQM","VLUE",
     "XLY","XLK","XLF","XLE","XLC","TLT","IWM","DIA",
 }
 
@@ -95,7 +95,12 @@ def _save_cache(cache: dict):
 # ── RSS feed ──────────────────────────────────────────────────────────────────
 
 def get_latest_videos(channel_id: str, max_results: int = 5) -> list[dict]:
-    """Fetch latest video metadata + description via YouTube RSS. No API key."""
+    """
+    Fetch latest video metadata + description via YouTube RSS.
+    No API key required.
+    Returns up to max_results videos sorted newest-first.
+    Returns [] on failure.
+    """
     url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
     try:
         resp = requests.get(url, timeout=FETCH_TIMEOUT,
@@ -209,39 +214,111 @@ def _extract_price_levels(text: str, portfolio_symbols: list[str]) -> list[dict]
         "target":              r"target\s+(?:of\s+|at\s+|is\s+)?(\d{2,5}(?:\.\d{1,2})?)",
     }
 
-    results = {}
-    for ticker in ALL_TICKERS:
+    results = []
+    seen    = set()
+
+    for ticker in sorted(ALL_TICKERS):
         pattern = r"\b" + re.escape(ticker) + r"\b"
+        if not re.search(pattern, text, re.IGNORECASE):
+            continue
+        if ticker.upper() in seen:
+            continue
+        seen.add(ticker.upper())
+
+        # Extract windows around each ticker mention
+        windows = []
         for m in re.finditer(pattern, text, re.IGNORECASE):
-            window = text[m.start():min(len(text), m.end() + 200)]
-            entry  = {"symbol": ticker.upper()}
-            for key, pat in CONTEXT_RE.items():
-                match = re.search(pat, window, re.IGNORECASE)
-                if match:
-                    try:
-                        val = float(match.group(1))
-                        if 1.0 <= val <= 100000.0:
-                            entry[key] = val
-                    except Exception:
-                        pass
-            if len(entry) > 1:
-                existing = results.get(ticker.upper(), {"symbol": ticker.upper()})
-                results[ticker.upper()] = {**existing,
-                    **{k: v for k, v in entry.items() if k not in existing}}
+            windows.append(text[max(0, m.start()-120):min(len(text), m.end()+200)])
+        context = " ".join(windows)
 
-    output = []
-    for sym, data in results.items():
-        if len(data) > 1:
-            data["timeframe"] = "near term"
-            data["notes"]     = "Extracted from transcript"
-            output.append(data)
-    return output
+        levels  = {}
+        for level_type, pattern_re in CONTEXT_RE.items():
+            matches = re.findall(pattern_re, context, re.IGNORECASE)
+            if matches:
+                levels[level_type] = float(matches[0])
+
+        if not levels:
+            continue
+
+        # Derive direction from surrounding text sentiment
+        bull = sum(1 for w in BULL_WORDS if w in context.lower())
+        bear = sum(1 for w in BEAR_WORDS if w in context.lower())
+        direction = "bullish" if bull > bear else "bearish" if bear > bull else "neutral"
+
+        results.append({
+            "symbol":    ticker.upper(),
+            "direction": direction,
+            "target":    levels.get("target", ""),
+            "comment":   " | ".join(
+                f"{k}: {v}" for k, v in levels.items() if k != "target"
+            ),
+        })
+
+    return results
 
 
-# ── Symbol extraction (regex, no AI) ─────────────────────────────────────────
+def _extract_expected_moves(text: str) -> list[dict]:
+    """
+    Extract options expected move levels from transcript.
+    Catches phrases like:
+      "752 to the upside, 725 to the downside"
+      "upper expected move at 745"
+      "expected move from 725 to 752"
+    """
+    results = []
+
+    upside_matches   = re.findall(
+        r'(\d{3,5}(?:\.\d{1,2})?)\s+(?:and\s+some\s+change\s+)?to\s+the\s+upside',
+        text, re.IGNORECASE)
+    downside_matches = re.findall(
+        r'(\d{3,5}(?:\.\d{1,2})?)\s+(?:and\s+some\s+change\s+)?to\s+the\s+downside',
+        text, re.IGNORECASE)
+    upper_matches = re.findall(
+        r'upper\s+(?:\w+\s+){0,3}(?:move|bound|target)\s+(?:\w+\s+){0,4}?(?:at\s+|near\s+|around\s+)?(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)',
+        text, re.IGNORECASE)
+    lower_matches = re.findall(
+        r'lower\s+(?:\w+\s+){0,3}(?:move|bound|target)\s+(?:\w+\s+){0,4}?(?:at\s+|near\s+|around\s+)?(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)',
+        text, re.IGNORECASE)
+    range_matches = re.findall(
+        r'(?:expected\s+move|pricing\s+in|range\s+of)\s+(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)\s+to\s+(?:the\s+upside\s+)?(?:and\s+)?(\d{3,5}(?:\.\d{1,2})?)',
+        text, re.IGNORECASE)
+    inline = re.findall(
+        r'pricing\s+in\s+(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)\s+to\s+the\s+upside[,\s]+(\d{3,5}(?:\.\d{1,2})?)\s+to\s+the\s+downside',
+        text, re.IGNORECASE)
+
+    all_upper = [float(v) for v in upside_matches + upper_matches if v]
+    all_lower = [float(v) for v in downside_matches + lower_matches if v]
+    for up, dn in inline:
+        all_upper.append(float(up))
+        all_lower.append(float(dn))
+    for lo, hi in range_matches:
+        lo_v, hi_v = float(lo), float(hi)
+        if lo_v < hi_v:
+            all_lower.append(lo_v)
+            all_upper.append(hi_v)
+        else:
+            all_upper.append(lo_v)
+            all_lower.append(hi_v)
+
+    all_upper = [v for v in all_upper if 300 <= v <= 10000]
+    all_lower = [v for v in all_lower if 300 <= v <= 10000]
+
+    if all_upper or all_lower:
+        entry = {"symbol": "SPY", "timeframe": "this week",
+                 "notes": "Options expected move"}
+        if all_upper:
+            entry["expected_range_high"] = max(set(all_upper), key=all_upper.count)
+        if all_lower:
+            entry["expected_range_low"]  = min(set(all_lower), key=all_lower.count)
+        results.append(entry)
+
+    return results
+
+
+# ── Symbol extraction ─────────────────────────────────────────────────────────
 
 def _extract_symbols(text: str, portfolio_symbols: list[str]) -> list[dict]:
-    """Find all ticker mentions and infer sentiment from surrounding words."""
+    """Find all ticker mentions and score their sentiment from surrounding context."""
     ALL_TICKERS = COMMON_TICKERS | set(portfolio_symbols)
     results = []
     seen    = set()
@@ -281,10 +358,7 @@ def _extract_symbols(text: str, portfolio_symbols: list[str]) -> list[dict]:
 # ── Key sentence extraction ───────────────────────────────────────────────────
 
 def _extract_key_sentences(transcript: str, max_words: int = 250) -> str:
-    """
-    Score every sentence by information density and return the top ones.
-    Used to build a condensed digest for the Anthropic API call.
-    """
+    """Score every sentence by information density, return top ones as digest."""
     KEY_TERMS = {
         "support","resistance","target","breakout","breakdown","yield",
         "inflation","recession","earnings","sector","weekly","monthly",
@@ -335,17 +409,11 @@ def _extract_key_sentences(transcript: str, max_words: int = 250) -> str:
 # ── Summary builder ───────────────────────────────────────────────────────────
 
 def _description_summary(title: str, description: str) -> dict:
-    """
-    Build summary from video description — no AI required.
-    The description is written by the creator and already summarizes the video.
-    Bias comes from keyword analysis of the title.
-    """
-    # Title bias — double-weighted since it's the clearest signal
+    """Build summary from video description — no AI required."""
     bias = _bias_from_text(title + " " + title)
     if bias == "neutral" and description:
         bias = _bias_from_text(description[:300])
 
-    # Clean description: skip short lines, links, and promotional text
     SKIP_PHRASES = {
         "subscribe", "discord", "patreon", "tradingview", "http",
         "►", "▶", "👉", "📌", "💬", "🔔",
@@ -359,25 +427,20 @@ def _description_summary(title: str, description: str) -> dict:
             continue
         paras.append(p)
 
-    # Summary = first paragraph, cut cleanly at a sentence boundary
     raw_summary = paras[0] if paras else title
     if len(raw_summary) > 600:
         cut = raw_summary[:600].rfind(".")
         raw_summary = raw_summary[:cut + 1] if cut > 100 else raw_summary[:600]
 
-    # Key points = remaining paragraphs, deduped against summary
     summary_words = set(raw_summary.lower().split())
     key_points = []
     for para in paras[1:6]:
-        # Strip list markers
         clean = re.sub(r"^[-•▸►*]\s+", "", para).strip()
-        # Take first sentence if paragraph is long
         sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", clean)
                      if len(s.strip()) > 15]
         point = sentences[0][:150] if sentences else clean[:150]
         if not point:
             continue
-        # Skip if too similar to summary (>60% word overlap)
         pt_words = set(point.lower().split())
         overlap  = len(pt_words & summary_words) / max(len(pt_words), 1)
         if overlap < 0.6:
@@ -385,11 +448,9 @@ def _description_summary(title: str, description: str) -> dict:
         if len(key_points) >= 3:
             break
 
-    # If no distinct key points found, extract unique sentences from summary
     if not key_points:
         all_sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_summary)
                      if len(s.strip()) > 30]
-        # Use sentences 2 onwards (first is already shown as summary headline)
         key_points = all_sents[1:4]
 
     return {
@@ -431,7 +492,7 @@ def _anthropic_analyze(prompt: str) -> str | None:
         return None
 
 
-# ── Main analysis ─────────────────────────────────────────────────────────────
+# ── Main video analyzer ───────────────────────────────────────────────────────
 
 def analyze_video(
     title: str,
@@ -448,20 +509,18 @@ def analyze_video(
     # Step 1: instant regex extraction from full transcript
     price_targets = _extract_price_levels(full_transcript or "", portfolio_symbols)
     em_levels     = _extract_expected_moves(full_transcript or "")
-    # Merge expected move levels into price_targets (avoid duplicates)
     existing_syms = {p.get("symbol") for p in price_targets}
     for em in em_levels:
         if em.get("symbol") not in existing_syms:
             price_targets.append(em)
         else:
-            # Update existing entry with EM data
             for pt in price_targets:
                 if pt.get("symbol") == em.get("symbol"):
                     pt.update({k: v for k, v in em.items() if k not in pt})
-    symbols       = _extract_symbols(full_transcript or description, portfolio_symbols)
+    symbols = _extract_symbols(full_transcript or description, portfolio_symbols)
     logger.info(f"  Regex: {len(price_targets)} price level(s), {len(symbols)} symbol(s)")
 
-    # Step 2: summary from description
+    # Step 2: summary from description or Claude
     if ANTHROPIC_API_KEY:
         logger.info("  Summary via Claude API...")
         digest = _extract_key_sentences(full_transcript) if full_transcript else ""
@@ -482,7 +541,7 @@ Rules:
 - overall_bias must match the title (breaking/warning = bearish)
 - mention specific sectors, tickers, or levels if present in the content"""
 
-        raw = _anthropic_analyze(prompt)
+        raw  = _anthropic_analyze(prompt)
         base = None
         if raw:
             try:
@@ -504,7 +563,7 @@ Rules:
         base = _description_summary(title, description)
         logger.info(f"  Description summary — bias: {base['overall_bias']}")
 
-    # Step 3: bias sanity check — title overrides AI/description if clearly different
+    # Step 3: bias sanity check — title overrides if clearly different
     final_bias       = base.get("overall_bias", "neutral")
     title_bias_check = _bias_from_text(title + " " + title)
     if title_bias_check in ("bearish", "bullish") and final_bias != title_bias_check:
@@ -520,116 +579,44 @@ Rules:
     return {**base, "price_targets": price_targets, "symbols_mentioned": symbols}
 
 
-
-def _extract_expected_moves(text: str) -> list[dict]:
-    """
-    Extract options expected move levels from transcript.
-    Catches phrases like:
-      "752 to the upside, 725 to the downside"
-      "upper expected move at 745"
-      "lower expected move at 733"
-      "expected move from 725 to 752"
-    """
-    results = []
-
-    # Pattern: "NUMBER to the upside" / "NUMBER to the downside"
-    upside_matches   = re.findall(
-        r'(\d{3,5}(?:\.\d{1,2})?)\s+(?:and\s+some\s+change\s+)?to\s+the\s+upside',
-        text, re.IGNORECASE)
-    downside_matches = re.findall(
-        r'(\d{3,5}(?:\.\d{1,2})?)\s+(?:and\s+some\s+change\s+)?to\s+the\s+downside',
-        text, re.IGNORECASE)
-
-    # Pattern: "upper ... move ... NUMBER"
-    upper_matches = re.findall(
-        r'upper\s+(?:\w+\s+){0,3}(?:move|bound|target)\s+(?:\w+\s+){0,4}?(?:at\s+|near\s+|around\s+)?(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)',
-        text, re.IGNORECASE)
-    lower_matches = re.findall(
-        r'lower\s+(?:\w+\s+){0,3}(?:move|bound|target)\s+(?:\w+\s+){0,4}?(?:at\s+|near\s+|around\s+)?(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)',
-        text, re.IGNORECASE)
-
-    # "expected move from X to Y" or "pricing in X to Y"
-    range_matches = re.findall(
-        r'(?:expected\s+move|pricing\s+in|range\s+of)\s+(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)\s+to\s+(?:the\s+upside\s+)?(?:and\s+)?(\d{3,5}(?:\.\d{1,2})?)',
-        text, re.IGNORECASE)
-
-    # "move that's pricing in about 752 to the upside, 725 to the downside"
-    # This is the most common format for The Stocks Channel
-    inline = re.findall(
-        r'pricing\s+in\s+(?:about\s+)?(\d{3,5}(?:\.\d{1,2})?)\s+to\s+the\s+upside[,\s]+(\d{3,5}(?:\.\d{1,2})?)\s+to\s+the\s+downside',
-        text, re.IGNORECASE)
-
-    all_upper = [float(v) for v in upside_matches + upper_matches if v]
-    all_lower = [float(v) for v in downside_matches + lower_matches if v]
-
-    for up, dn in inline:
-        all_upper.append(float(up))
-        all_lower.append(float(dn))
-
-    for lo, hi in range_matches:
-        lo_v, hi_v = float(lo), float(hi)
-        if lo_v < hi_v:
-            all_lower.append(lo_v)
-            all_upper.append(hi_v)
-        else:
-            all_upper.append(lo_v)
-            all_lower.append(hi_v)
-
-    # Sanity filter: values must be in reasonable SPY/QQQ range (300-10000)
-    all_upper = [v for v in all_upper if 300 <= v <= 10000]
-    all_lower = [v for v in all_lower if 300 <= v <= 10000]
-
-    if all_upper or all_lower:
-        entry = {"symbol": "SPY", "timeframe": "this week", "notes": "Options expected move"}
-        if all_upper: entry["expected_range_high"] = max(set(all_upper), key=all_upper.count)
-        if all_lower: entry["expected_range_low"]  = min(set(all_lower), key=all_lower.count)
-        results.append(entry)
-
-    return results
-
 # ── Cross-reference against EOD signals ──────────────────────────────────────
 
 def cross_reference(yt_symbols: list[dict], signal_log: dict) -> list[dict]:
     """Compare YouTube-mentioned symbols against your EOD signals."""
     results = []
-    for yt in yt_symbols:
-        sym    = yt.get("symbol", "").upper()
-        yt_sen = yt.get("sentiment", "neutral")
-
-        eod_signal = eod_conv = eod_acct = None
-        for key, sig in signal_log.items():
+    for sym_data in yt_symbols:
+        sym = sym_data.get("symbol", "")
+        if not sym:
+            continue
+        eod_signal = ""
+        account    = ""
+        for key, val in signal_log.items():
             if key.endswith(f":{sym}"):
-                eod_signal = sig.get("signal", "HOLD")
-                eod_conv   = sig.get("conviction", 0)
-                eod_acct   = key.split(":")[0]
+                eod_signal = val.get("signal", "")
+                account    = key.split(":")[0]
                 break
+        if not eod_signal:
+            continue
 
-        yt_bull = yt_sen == "bullish"
-        yt_bear = yt_sen in ("bearish", "cautious")
-        if eod_signal is None:
-            alignment = "not_in_portfolio"
-        elif (yt_bull and eod_signal in ("BUY","STRONG_BUY")) or \
-             (yt_bear and eod_signal in ("SELL","STRONG_SELL")):
-            alignment = "aligned"
-        elif (yt_bull and eod_signal in ("SELL","STRONG_SELL")) or \
-             (yt_bear and eod_signal in ("BUY","STRONG_BUY")):
-            alignment = "conflict"
-        else:
-            alignment = "neutral"
-
+        yt_sent   = sym_data.get("sentiment", "neutral")
+        eod_bull  = eod_signal in ("BUY", "STRONG_BUY")
+        yt_bull   = yt_sent == "bullish"
+        eod_bear  = eod_signal in ("SELL", "STRONG_SELL")
+        yt_bear   = yt_sent == "bearish"
+        alignment = (
+            "aligned"  if (eod_bull and yt_bull) or (eod_bear and yt_bear) else
+            "opposed"  if (eod_bull and yt_bear) or (eod_bear and yt_bull) else
+            "neutral"
+        )
         results.append({
-            "symbol":           sym,
-            "yt_sentiment":     yt_sen,
-            "action_mentioned": yt.get("action_mentioned", ""),
-            "yt_comment":       yt.get("comment", ""),
-            "eod_signal":       eod_signal,
-            "eod_conv":         eod_conv,
-            "eod_acct":         eod_acct,
-            "alignment":        alignment,
+            "symbol":     sym,
+            "fom_view":   yt_sent,
+            "action":     sym_data.get("action_mentioned", "none"),
+            "comment":    sym_data.get("comment", ""),
+            "your_signal":eod_signal,
+            "account":    account,
+            "alignment":  alignment,
         })
-
-    order = {"conflict": 0, "aligned": 1, "neutral": 2, "not_in_portfolio": 3}
-    results.sort(key=lambda x: order.get(x["alignment"], 9))
     return results
 
 
@@ -647,19 +634,53 @@ def fetch_channel_analysis(
     cache        = _load_cache()
 
     videos = get_latest_videos(channel_id)
+
+    # ── RSS fallback: if RSS fails, use most recent cache entry ───────────────
     if not videos:
+        logger.warning(
+            f"{channel_name}: RSS returned no videos (403/timeout/empty) "
+            f"— checking cache for fallback"
+        )
+        best_cached = None
+        best_date   = ""
+        for key, val in cache.items():
+            if key.startswith(f"{channel_id}:") and val.get("published", "") > best_date:
+                best_date   = val["published"]
+                best_cached = val
+        if best_cached:
+            age_note = f"published {best_date}"
+            logger.warning(
+                f"{channel_name}: showing cached analysis ({age_note}) "
+                f"— YouTube RSS unavailable, a newer video may exist"
+            )
+            result = dict(best_cached)
+            result["_stale_cache"] = True   # used by run_morning.py to show amber badge
+            result["cross_reference"] = cross_reference(
+                result.get("symbols_mentioned", []), signal_log)
+            return result
+        logger.warning(f"{channel_name}: no cache fallback available — skipping")
         return None
 
+    # ── Find target video within max_age window ────────────────────────────────
+    # Check up to max_results videos — YouTube RSS sometimes lists older videos first
+    # if the latest video was just published and hasn't fully propagated
     target = next((v for v in videos if v["age_days"] <= max_age), None)
     if not target:
-        logger.info(f"{channel_name}: no video within {max_age}d "
-                    f"(latest: {videos[0]['age_days']}d ago)")
+        logger.info(
+            f"{channel_name}: no video within {max_age}d "
+            f"(latest: {videos[0]['title'][:40]} — {videos[0]['age_days']}d ago)"
+        )
         return None
 
     video_id  = target["video_id"]
     cache_key = f"{channel_id}:{video_id}"
 
-    # Skip bad cache entries (previous failed analysis)
+    logger.info(
+        f"{channel_name}: target → '{target['title'][:55]}' "
+        f"({target['published']}, {target['age_days']}d ago, {target['url']})"
+    )
+
+    # ── Cache check ────────────────────────────────────────────────────────────
     if not force and cache_key in cache:
         cached = cache[cache_key]
         is_bad = (
@@ -667,25 +688,24 @@ def fetch_channel_analysis(
             and not cached.get("key_points")
         )
         if not is_bad:
-            logger.info(f"{channel_name}: using cached analysis")
+            logger.info(
+                f"{channel_name}: cache hit — {video_id} "
+                f"(published {cached.get('published', '?')})"
+            )
             result = dict(cached)
             result["cross_reference"] = cross_reference(
                 result.get("symbols_mentioned", []), signal_log)
             return result
-        logger.info(f"{channel_name}: retrying failed cache entry")
+        logger.info(f"{channel_name}: retrying bad cache entry for {video_id}")
 
-    logger.info(f"{channel_name}: '{target['title']}' "
-                f"({target['published']}, {target['age_days']}d ago)")
-
-    # Fetch full transcript
-    logger.info(f"{channel_name}: fetching transcript...")
+    # ── Fresh analysis ─────────────────────────────────────────────────────────
+    logger.info(f"{channel_name}: fetching transcript for {video_id}...")
     full_transcript = get_full_transcript(video_id) or ""
     if full_transcript:
         logger.info(f"{channel_name}: {len(full_transcript.split())} words — analyzing...")
     else:
         logger.info(f"{channel_name}: no transcript — using description only")
 
-    # Analyze
     analysis = analyze_video(
         title             = target["title"],
         description       = target.get("description", ""),
@@ -703,7 +723,7 @@ def fetch_channel_analysis(
         "transcript": full_transcript,   # included for email appendix
     })
 
-    # Cache without transcript (too large) and without cross_reference (changes daily)
+    # Cache (without transcript — too large — and without cross_reference — changes daily)
     cache[cache_key] = {k: v for k, v in analysis.items()
                         if k not in ("cross_reference", "transcript")}
     _save_cache(cache)
