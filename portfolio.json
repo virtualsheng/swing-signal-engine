@@ -6,11 +6,11 @@
     "After a SELL: set shares to 0.",
     "Run: python run_signals.py eod"
   ],
-  "last_updated": "2026-05-18",
+  "last_updated": "2026-05-19",
   "accounts": {
     "Rollover IRA": {
       "account_type": "rollover_ira",
-      "account_value": 545855.66,
+      "account_value": 526103.11,
       "tradeable": true,
       "signal_mode": "full",
       "min_conviction": 65,
@@ -23,106 +23,106 @@
         "DBMF": {
           "shares": 2000.0,
           "avg_cost": 30.46,
-          "current_price": 31.3,
-          "current_value": 62600.0,
+          "current_price": 31.32,
+          "current_value": 62640.0,
           "date_entered": "2026-05-16"
         },
         "GRID": {
           "shares": 300.0,
           "avg_cost": 193.58,
-          "current_price": 188.53,
-          "current_value": 56557.5,
+          "current_price": 185.01,
+          "current_value": 55503.0,
           "date_entered": "2026-05-16"
         },
         "GDE": {
-          "shares": 300.0,
-          "avg_cost": 67.96,
-          "current_price": 67.4,
-          "current_value": 20220.03,
+          "shares": 150.0,
+          "avg_cost": 68.16,
+          "current_price": 67.05,
+          "current_value": 10057.5,
           "date_entered": "2026-05-16"
         },
         "SPMO": {
           "shares": 380.0,
           "avg_cost": 136.27,
-          "current_price": 140.85,
-          "current_value": 53523.0,
+          "current_price": 140.63,
+          "current_value": 53439.4,
           "date_entered": "2026-05-16"
         },
         "SMH": {
           "shares": 90.0,
           "avg_cost": 517.49,
-          "current_price": 541.19,
-          "current_value": 48707.1,
+          "current_price": 543.96,
+          "current_value": 48956.4,
           "date_entered": "2026-05-16"
         },
         "DRAM": {
           "shares": 700.0,
           "avg_cost": 45.31,
-          "current_price": 49.08,
-          "current_value": 34352.5,
+          "current_price": 49.77,
+          "current_value": 34839.0,
           "date_entered": "2026-05-16"
         },
         "DBC": {
           "shares": 1120.0,
           "avg_cost": 29.37,
-          "current_price": 31.58,
-          "current_value": 35369.6,
+          "current_price": 31.61,
+          "current_value": 35403.2,
           "date_entered": "2026-05-16"
         },
         "NANR": {
           "shares": 380.0,
           "avg_cost": 83.61,
-          "current_price": 83.35,
-          "current_value": 31673.0,
+          "current_price": 82.3,
+          "current_value": 31274.0,
           "date_entered": "2026-05-16"
         },
         "QQQM": {
           "shares": 100.0,
           "avg_cost": 272.95,
-          "current_price": 288.93,
-          "current_value": 28893.0,
+          "current_price": 288.84,
+          "current_value": 28884.0,
           "date_entered": "2026-05-16"
         },
         "UFO": {
-          "shares": 500.0,
-          "avg_cost": 54.64,
-          "current_price": 56.6,
-          "current_value": 28300.0,
+          "shares": 600.0,
+          "avg_cost": 54.97,
+          "current_price": 57.07,
+          "current_value": 34242.0,
           "date_entered": "2026-05-16"
         },
         "EWJV": {
           "shares": 500.0,
           "avg_cost": 42.04,
-          "current_price": 44.76,
-          "current_value": 22380.0,
+          "current_price": 44.93,
+          "current_value": 22463.85,
           "date_entered": "2026-05-16"
         },
         "GLDM": {
-          "shares": 250.0,
-          "avg_cost": 94.68,
-          "current_price": 89.88,
-          "current_value": 22470.0,
+          "shares": 100.0,
+          "avg_cost": 100.17,
+          "current_price": 88.7,
+          "current_value": 8870.0,
           "date_entered": "2026-05-16"
         },
         "EWT": {
           "shares": 200.0,
           "avg_cost": 87.51,
-          "current_price": 91.41,
-          "current_value": 18282.0,
+          "current_price": 89.83,
+          "current_value": 17966.0,
           "date_entered": "2026-05-16"
         },
         "EWY": {
           "shares": 88.0,
           "avg_cost": 183.97,
-          "current_price": 175.97,
-          "current_value": 15485.36,
+          "current_price": 174.02,
+          "current_value": 15313.76,
           "date_entered": "2026-05-16"
         },
         "PSLV": {
           "shares": 500.0,
           "avg_cost": 27.24,
-          "current_price": 24.86,
-          "current_value": 12427.5,
+          "current_price": 23.88,
+          "current_value": 11940.0,
           "date_entered": "2026-05-16"
         },
         "IBIT": {
@@ -135,29 +135,29 @@
         "URA": {
           "shares": 200.0,
           "avg_cost": 56.51,
-          "current_price": 48.61,
-          "current_value": 9722.0,
+          "current_price": 47.2,
+          "current_value": 9440.0,
           "date_entered": "2026-05-16"
         },
         "REMX": {
           "shares": 100.0,
           "avg_cost": 102.53,
-          "current_price": 94.15,
-          "current_value": 9415.07,
+          "current_price": 92.13,
+          "current_value": 9213.0,
           "date_entered": "2026-05-16"
         },
         "VLUE": {
           "shares": 200.0,
           "avg_cost": 178.41,
-          "current_price": 177.39,
-          "current_value": 35478.0,
+          "current_price": 178.29,
+          "current_value": 35658.0,
           "date_entered": "2026-05-18"
         }
       }
     },
     "ROTH IRA": {
       "account_type": "roth_ira",
-      "account_value": 169776.43,
+      "account_value": 166767.52,
       "tradeable": true,
       "signal_mode": "full",
       "min_conviction": 70,
@@ -170,99 +170,99 @@
         "TSM": {
           "shares": 70.0,
           "avg_cost": 375.42,
-          "current_price": 393.46,
-          "current_value": 27541.85,
+          "current_price": 392.61,
+          "current_value": 27482.7,
           "date_entered": "2026-05-16"
         },
         "NVDA": {
           "shares": 118.0,
           "avg_cost": 204.33,
-          "current_price": 220.3,
-          "current_value": 25995.32,
+          "current_price": 220.61,
+          "current_value": 26031.98,
           "date_entered": "2026-05-16"
         },
         "JPM": {
           "shares": 70.0,
           "avg_cost": 304.17,
-          "current_price": 299.84,
-          "current_value": 20988.8,
+          "current_price": 295.7,
+          "current_value": 20699.0,
           "date_entered": "2026-05-16"
         },
         "MU": {
           "shares": 25.0,
           "avg_cost": 623.18,
-          "current_price": 685.76,
-          "current_value": 17144.05,
+          "current_price": 698.74,
+          "current_value": 17468.5,
           "date_entered": "2026-05-16"
         },
         "AMAT": {
           "shares": 50.0,
           "avg_cost": 421.31,
-          "current_price": 411.0,
-          "current_value": 20550.0,
+          "current_price": 406.91,
+          "current_value": 20345.5,
           "date_entered": "2026-05-16"
         },
         "SNDK": {
           "shares": 10.0,
           "avg_cost": 1147.68,
-          "current_price": 1300.66,
-          "current_value": 13006.6,
+          "current_price": 1383.29,
+          "current_value": 13832.9,
           "date_entered": "2026-05-16"
         },
         "ARIS": {
-          "shares": 200.0,
+          "shares": 0,
           "avg_cost": 19.96,
           "current_price": 18.15,
-          "current_value": 3630.0,
+          "current_value": 0,
           "date_entered": "2026-05-16"
         },
         "PLTR": {
           "shares": 70.0,
           "avg_cost": 135.65,
-          "current_price": 133.27,
-          "current_value": 9328.9,
+          "current_price": 135.26,
+          "current_value": 9468.2,
           "date_entered": "2026-05-16"
         },
         "LRCX": {
           "shares": 28.0,
           "avg_cost": 252.85,
-          "current_price": 275.54,
-          "current_value": 7714.98,
+          "current_price": 273.38,
+          "current_value": 7654.64,
           "date_entered": "2026-05-16"
         },
         "AG": {
           "shares": 180.0,
           "avg_cost": 23.38,
-          "current_price": 20.01,
-          "current_value": 3601.8,
+          "current_price": 18.8,
+          "current_value": 3384.0,
           "date_entered": "2026-05-16"
         },
         "RKLB": {
           "shares": 60.0,
           "avg_cost": 80.94,
-          "current_price": 126.67,
-          "current_value": 7600.2,
+          "current_price": 127.31,
+          "current_value": 7638.6,
           "date_entered": "2026-05-16"
         },
         "PAAS": {
           "shares": 50.0,
           "avg_cost": 61.65,
-          "current_price": 55.39,
-          "current_value": 2769.48,
+          "current_price": 52.87,
+          "current_value": 2643.5,
           "date_entered": "2026-05-16"
         },
         "GEV": {
           "shares": 10.0,
           "avg_cost": 1038.65,
-          "current_price": 990.45,
-          "current_value": 9904.45,
+          "current_price": 1011.8,
+          "current_value": 10118.0,
           "date_entered": "2026-05-16"
         }
       }
     },
     "Health Savings Account": {
       "account_type": "hsa",
-      "account_value": 6736.96,
+      "account_value": 6693.78,
       "tradeable": true,
       "signal_mode": "full",
       "min_conviction": 65,
@@ -275,29 +275,29 @@
         "GDE": {
           "shares": 42.0,
           "avg_cost": 61.6,
-          "current_price": 67.4,
-          "current_value": 2830.8,
+          "current_price": 67.05,
+          "current_value": 2816.1,
           "date_entered": "2026-05-16"
         },
         "VUG": {
           "shares": 30.0,
           "avg_cost": 73.02,
-          "current_price": 86.66,
-          "current_value": 2599.8,
+          "current_price": 86.29,
+          "current_value": 2588.7,
           "date_entered": "2026-05-16"
         },
         "AVUV": {
           "shares": 11.0,
           "avg_cost": 109.91,
-          "current_price": 118.76,
-          "current_value": 1306.36,
+          "current_price": 117.18,
+          "current_value": 1288.98,
           "date_entered": "2026-05-16"
         }
       }
     },
     "VAST DATA 401(K)": {
       "account_type": "401k",
-      "account_value": 2029.52,
+      "account_value": 2008.52,
       "tradeable": false,
       "signal_mode": "monitor_only",
       "min_conviction": null,
@@ -310,36 +310,36 @@
         "JLGMX": {
           "shares": 6.599,
           "avg_cost": 88.06,
-          "current_price": 90.74,
-          "current_value": 598.79,
+          "current_price": 89.59,
+          "current_value": 591.2,
           "date_entered": "2026-05-16"
         },
         "FSSNX": {
           "shares": 14.271,
           "avg_cost": 35.57,
-          "current_price": 34.96,
-          "current_value": 498.91,
+          "current_price": 34.39,
+          "current_value": 490.78,
           "date_entered": "2026-05-16"
         },
         "FXAIX": {
           "shares": 1.266,
           "avg_cost": 256.07,
-          "current_price": 257.65,
-          "current_value": 326.18,
+          "current_price": 255.78,
+          "current_value": 323.82,
           "date_entered": "2026-05-16"
         },
         "FSGGX": {
           "shares": 14.852,
           "avg_cost": 20.98,
-          "current_price": 20.57,
-          "current_value": 305.51,
+          "current_price": 20.49,
+          "current_value": 304.32,
           "date_entered": "2026-05-16"
         },
         "FSMDX": {
           "shares": 7.524,
           "avg_cost": 40.48,
-          "current_price": 39.89,
-          "current_value": 300.13,
+          "current_price": 39.66,
+          "current_value": 298.4,
           "date_entered": "2026-05-16"
         }
       }

@@ -35,12 +35,20 @@ def _conviction_bar(c: int) -> str:
 
 def build_portfolio_summary(signals_by_account: dict, portfolio: dict) -> dict:
     """
-    Compute today's estimated P&L per account from 1-day price changes.
+    Compute portfolio value and today's P&L per account.
 
-    Account value is computed dynamically from shares × live price (from signal
-    data) so it stays current even when portfolio.json hasn't been updated.
-    Falls back to portfolio.json account_value if no signal data is available
-    (e.g. monitor-only 401k accounts).
+    Priority for each symbol's price:
+      1. Live price from signal engine (yfinance close — most accurate)
+      2. portfolio.json current_price (stale — only for symbols not in symbols.txt
+         or monitor-only accounts like 401k mutual funds)
+
+    Known limitations:
+      - If shares were updated today via trades and portfolio.json hasn't been
+        refreshed (auto-update CSV not yet applied), share counts will be wrong.
+      - Symbols not in symbols.txt get no live price — stale portfolio.json used.
+      - 401k mutual fund prices always come from portfolio.json (NAV settles at 4 PM).
+
+    The dashboard notes which symbols used live vs stale prices.
     """
     accounts_out = []
     total_value  = 0.0
@@ -51,43 +59,63 @@ def build_portfolio_summary(signals_by_account: dict, portfolio: dict) -> dict:
         acct_signals = signals_by_account.get(acct_name, [])
         sig_by_sym   = {s["symbol"]: s for s in acct_signals}
 
-        # Compute live account value from shares × today's live price
-        live_value = 0.0
-        pnl_today  = 0.0
+        live_value   = 0.0
+        pnl_today    = 0.0
+        live_syms    = []   # symbols priced from live signal data
+        stale_syms   = []   # symbols priced from portfolio.json (stale)
 
         for sym, pos in positions.items():
             shares = pos.get("shares", 0)
             if shares == 0:
                 continue
+
             sig = sig_by_sym.get(sym)
-            if sig:
-                live_price = sig.get("price", pos.get("current_price", 0))
-                chg_1d     = sig.get("scorecard", {}).get("chg_1d", 0) if "scorecard" in sig else sig.get("chg_1d", 0)
+            if sig and sig.get("price", 0) > 0:
+                # Live price from signal engine
+                live_price = sig["price"]
+                chg_1d     = (sig.get("scorecard", {}).get("chg_1d", 0)
+                              if "scorecard" in sig else sig.get("chg_1d", 0))
+                live_syms.append(sym)
             else:
-                # Monitor-only account or symbol not in signals — use stale price
+                # Stale price from portfolio.json
                 live_price = pos.get("current_price", 0)
                 chg_1d     = 0.0
+                if live_price > 0:
+                    stale_syms.append(sym)
+
+            if live_price <= 0:
+                continue
 
             live_value += shares * live_price
 
-            # P&L = shares × (live_price - yesterday_price)
             if chg_1d != -100 and live_price > 0:
                 prev_price  = live_price / (1 + chg_1d / 100)
                 pnl_today  += shares * (live_price - prev_price)
 
-        # Fall back to portfolio.json account_value for monitor-only accounts
-        # (mutual funds — no live price in signals)
+        # 401k / monitor-only: no signals generated, fall back to portfolio.json
+        # account_value (which itself comes from the Fidelity CSV auto-update)
         if live_value == 0:
             live_value = acct_config.get("account_value", 0)
 
         pnl_pct = pnl_today / live_value * 100 if live_value > 0 else 0
         total_value += live_value
         total_pnl   += pnl_today
+
+        # Build a data quality note for the dashboard
+        quality_note = ""
+        if stale_syms:
+            quality_note = f"stale price: {', '.join(stale_syms[:4])}"
+            if len(stale_syms) > 4:
+                quality_note += f" +{len(stale_syms)-4} more"
+
         accounts_out.append({
-            "name":      acct_name,
-            "value":     live_value,
-            "pnl_today": pnl_today,
-            "pnl_pct":   pnl_pct,
+            "name":         acct_name,
+            "value":        live_value,
+            "pnl_today":    pnl_today,
+            "pnl_pct":      pnl_pct,
+            "live_count":   len(live_syms),
+            "stale_count":  len(stale_syms),
+            "quality_note": quality_note,
         })
 
     return {
@@ -170,12 +198,19 @@ def build_html_report(
     if portfolio_summary:
         acct_cards = ""
         for a in portfolio_summary.get("accounts", []):
-            pnl_c = chg_color(a["pnl_today"])
+            pnl_c     = chg_color(a["pnl_today"])
+            stale_tag = ""
+            if a.get("stale_count", 0) > 0:
+                stale_tag = (
+                    f'<div style="font-size:10px;color:#BA7517;margin-top:2px">'
+                    f'⚠️ {a["stale_count"]} stale price{"s" if a["stale_count"]!=1 else ""}</div>'
+                )
             acct_cards += f"""
             <div style="background:#F7F5EE;border-radius:6px;padding:10px 14px;min-width:160px">
               <div style="font-size:12px;color:#5F5E5A;margin-bottom:2px">{a['name']}</div>
               <div style="font-size:16px;font-weight:500">${a['value']:,.0f}</div>
               <div style="font-size:12px;color:{pnl_c};margin-top:2px">{a['pnl_today']:+,.0f} ({a['pnl_pct']:+.2f}%)</div>
+              {stale_tag}
             </div>"""
         total_pnl = portfolio_summary.get("total_pnl_today", 0)
         total_pct = portfolio_summary.get("total_pnl_pct", 0)
@@ -186,6 +221,7 @@ def build_html_report(
             <div>
               <span style="font-size:15px;font-weight:500">Portfolio Dashboard</span>
               <span style="font-size:12px;color:#5F5E5A;margin-left:10px">Total: ${total_value:,.0f}</span>
+              <span style="font-size:11px;color:#888;margin-left:8px">est. from live prices × shares in portfolio.json</span>
             </div>
             <div style="text-align:right">
               <span style="font-size:15px;font-weight:500;color:{tp_color}">{total_pnl:+,.0f}</span>
