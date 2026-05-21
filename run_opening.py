@@ -53,6 +53,10 @@ from signals.portfolio      import (
     load_portfolio, get_tradeable_accounts, get_position_in,
 )
 from signals.ai_engine      import check_ollama_available
+from signals.market_futures import (
+    get_futures_snapshot, get_top_headline,
+    format_futures_html, format_futures_text,
+)
 from notifications.notifier import deliver_report
 
 SIGNAL_LOG_FILE = "cache/signal_log.json"
@@ -136,6 +140,8 @@ def build_opening_html(
     stand_down_list: list,
     opening_narrative: str,
     total_value: float,
+    futures_snap: list = None,
+    top_headline: dict = None,
 ) -> str:
     now = datetime.now().strftime("%H:%M ET")
 
@@ -257,6 +263,11 @@ def build_opening_html(
           </table>
         </div>"""
 
+    # Market bar: mode="close" = actual live prices (not futures) at 9:50 AM
+    market_bar_html = ""
+    if futures_snap:
+        market_bar_html = format_futures_html(futures_snap, top_headline or {})
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:860px;margin:0 auto;padding:20px;color:#2C2C2A;background:#fff;font-size:14px}}</style>
@@ -266,6 +277,7 @@ def build_opening_html(
   <p style="margin:4px 0 0;font-size:13px;color:#5F5E5A">{today_str} {now} &nbsp;|&nbsp; Portfolio: ${total_value:,.0f}</p>
   <p style="margin:4px 0 0;font-size:12px;color:#888">Based on first 15 min of price action (9:30–9:45 AM opening range)</p>
 </div>
+{market_bar_html}
 <div style="margin-bottom:20px;padding:14px 16px;border-left:3px solid #1D9E75;background:#FAFAF8;border-radius:0 6px 6px 0">
   <p style="margin:0;font-size:13px;line-height:1.7;color:#2C2C2A">{opening_narrative}</p>
 </div>
@@ -279,15 +291,17 @@ def build_opening_html(
 </body></html>"""
 
 
-def build_opening_text(execute_list, wait_list, stand_down_list, opening_narrative, today_str, total_value) -> str:
+def build_opening_text(execute_list, wait_list, stand_down_list, opening_narrative, today_str, total_value, futures_snap=None) -> str:
     now = datetime.now().strftime("%H:%M ET")
     lines = [
         "═" * 62,
         f"  OPENING REPORT — TRADE LIST — {today_str} {now}",
         f"  Portfolio: ${total_value:,.0f}",
         "═" * 62, "",
-        f"  {opening_narrative}", "",
     ]
+    if futures_snap:
+        lines += ["MARKET (live prices):", format_futures_text(futures_snap), ""]
+    lines += [f"  {opening_narrative}", ""]
     if execute_list:
         lines.append(f"  ✅ EXECUTE NOW ({len(execute_list)} trade{'s' if len(execute_list)!=1 else ''}):")
         for t in execute_list:
@@ -389,13 +403,28 @@ def run():
         ollama_ok, execute_list, wait_list, stand_down_list
     )
 
+    # Fetch live market prices (mode="close" = actual prices, not futures)
+    # At 9:50 AM the market is open so regularMarketPrice = live intraday price
+    logger.info("Fetching live market snapshot...")
+    try:
+        open_snap    = get_futures_snapshot(force=True, mode="close")
+        top_headline = get_top_headline()
+        fetched = sum(1 for f in open_snap if f.get("price") is not None)
+        logger.info(f"Market snapshot: {fetched}/8 tickers")
+    except Exception as e:
+        logger.warning(f"Market snapshot failed: {e}")
+        open_snap    = []
+        top_headline = {}
+
     html_report = build_opening_html(
         today_str, execute_list, wait_list, stand_down_list,
         opening_narrative, total_value,
+        futures_snap=open_snap, top_headline=top_headline,
     )
     text_report = build_opening_text(
         execute_list, wait_list, stand_down_list,
         opening_narrative, today_str, total_value,
+        futures_snap=open_snap,
     )
 
     exec_count = len(execute_list)

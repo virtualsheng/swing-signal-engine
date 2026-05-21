@@ -153,6 +153,7 @@ def get_futures_snapshot(force: bool = False, mode: str = "premarket") -> list[d
             "price":         None,
             "prev_close":    None,
             "chg_pct":       None,
+            "chg_val":       None,   # dollar/point change
             "is_up":         None,
             "display_price": "N/A",
         }
@@ -163,7 +164,9 @@ def get_futures_snapshot(force: bool = False, mode: str = "premarket") -> list[d
 
             if prev and prev > 0:
                 chg_pct          = (price - prev) / prev * 100
+                chg_val          = price - prev
                 entry["chg_pct"] = round(chg_pct, 2)
+                entry["chg_val"] = round(chg_val, 4)
                 entry["is_up"]   = chg_pct >= 0
 
             # Format display price
@@ -257,6 +260,23 @@ def get_top_headline() -> dict:
     return {}
 
 
+def _fmt_chg_val(f: dict) -> str:
+    """Format the dollar/point change for a ticker entry."""
+    chg_val = f.get("chg_val")
+    label   = f.get("label", "")
+    if chg_val is None:
+        return ""
+    # US 10-YR is a yield — show basis points
+    if label == "US 10-YR":
+        bps = chg_val * 100
+        return f"{bps:+.1f}bp"
+    # Bitcoin and large indices — whole numbers
+    if abs(chg_val) >= 100:
+        return f"{chg_val:+,.0f}"
+    # Small prices like OIL, SILVER
+    return f"{chg_val:+.2f}"
+
+
 def format_futures_text(snapshot: list[dict]) -> str:
     """One compact line per ticker for Telegram / plain text."""
     parts = []
@@ -264,8 +284,12 @@ def format_futures_text(snapshot: list[dict]) -> str:
         if f["price"] is None:
             continue
         if f["chg_pct"] is not None:
-            arrow = "▲" if f["is_up"] else "▼"
-            parts.append(f"{f['label']} {f['display_price']} {arrow}{abs(f['chg_pct']):.2f}%")
+            arrow   = "▲" if f["is_up"] else "▼"
+            chg_str = _fmt_chg_val(f)
+            parts.append(
+                f"{f['label']} {f['display_price']} "
+                f"{arrow}{chg_str} ({abs(f['chg_pct']):.2f}%)"
+            )
         else:
             parts.append(f"{f['label']} {f['display_price']}")
     # Two rows of 4
@@ -293,13 +317,17 @@ def format_futures_html(snapshot: list[dict], headline: dict) -> str:
             arrow = "▲" if f["is_up"] else "▼"
             pct   = f"{arrow} {abs(f['chg_pct']):.2f}%"
 
+        chg_val_str = _fmt_chg_val(f) if f.get("chg_pct") is not None else ""
         cells += f"""
         <td style="padding:8px 10px;text-align:center;
                    border-right:0.5px solid #E8E6DF;white-space:nowrap">
           <div style="font-size:10px;color:#888;text-transform:uppercase;
                       letter-spacing:0.5px;margin-bottom:3px">{f['label']}</div>
           <div style="font-size:13px;font-weight:600;color:{c}">{f['display_price']}</div>
-          <div style="font-size:11px;color:{c};margin-top:1px">{pct or "—"}</div>
+          <div style="font-size:11px;color:{c};margin-top:1px;line-height:1.5">
+            {chg_val_str}<br>
+            <span style="opacity:0.85">{pct or "—"}</span>
+          </div>
         </td>"""
 
     headline_html = ""
