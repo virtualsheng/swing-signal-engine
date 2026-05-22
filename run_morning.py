@@ -58,6 +58,7 @@ from signals.market_futures        import (
     format_futures_text, format_futures_html,
 )
 from signals.auto_update_portfolio import auto_update as auto_update_portfolio
+from signals.gumshoe_fetcher       import fetch_gumshoe_analysis, format_gumshoe_html
 from notifications.notifier        import deliver_report
 
 SIGNAL_LOG_FILE = "cache/signal_log.json"
@@ -166,6 +167,7 @@ def build_morning_html(
     em_data: dict = None,
     futures_snap: list = None,
     top_headline: dict = None,
+    gumshoe: list = None,
 ) -> str:
     spy_gap = market_overview.get("spy", {}).get("gap_pct", 0)
     qqq_gap = market_overview.get("qqq", {}).get("gap_pct", 0)
@@ -425,9 +427,55 @@ def build_morning_html(
                 '⚠️ RSS unavailable — may not be latest video</span>'
             )
 
+        # Key points from AI
+        key_points    = yt_analysis.get("key_points", [])
+        imp_levels    = yt_analysis.get("important_levels", [])
+        tkr_sentiment = yt_analysis.get("ticker_sentiment", {})
+        action_viewer = yt_analysis.get("action_for_viewer", "")
+
+        kp_html = ""
+        if key_points:
+            kp_items = "".join(
+                f'<li style="margin:4px 0;line-height:1.5">{kp}</li>'
+                for kp in key_points if kp
+            )
+            kp_html = f'''
+            <div style="margin-top:10px">
+              <div style="font-size:12px;font-weight:500;color:#5F5E5A;margin-bottom:4px">Key Points</div>
+              <ul style="margin:0;padding-left:18px;font-size:13px;color:#2C2C2A">{kp_items}</ul>
+            </div>'''
+
+        levels_html = ""
+        if imp_levels:
+            lvl_items = "  ·  ".join(l for l in imp_levels if l)
+            levels_html = f'''
+            <div style="margin-top:8px;padding:6px 10px;background:#F7F5EE;border-radius:6px;
+                        font-size:12px;color:#5F5E5A">
+              <strong>Key levels:</strong> {lvl_items}
+            </div>'''
+
+        # Ticker sentiment pills
+        tsent_html = ""
+        if tkr_sentiment:
+            pills = "".join(
+                f'<span style="display:inline-block;margin:2px 3px;padding:2px 8px;'                f'border-radius:4px;font-size:12px;'                f'color:{"#1D9E75" if s == "bullish" else "#E24B4A" if s == "bearish" else "#888"};'                f'border:0.5px solid {"#1D9E75" if s == "bullish" else "#E24B4A" if s == "bearish" else "#D3D1C7"}">'
+                f'{t} {s}</span>'
+                for t, s in tkr_sentiment.items()
+            )
+            tsent_html = f'<div style="margin-top:6px">{pills}</div>'
+
+        action_html = ""
+        if action_viewer:
+            action_html = f'''
+            <div style="margin-top:8px;padding:6px 10px;background:#E1F5EE;border-radius:6px;
+                        font-size:12px;color:#0F6E56">
+              <strong>👉 Action:</strong> {action_viewer}
+            </div>'''
+
         yt_sections_html += f"""
         <div style="margin-bottom:20px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
-          <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;display:flex;align-items:center;gap:12px">
+          <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;
+                      display:flex;align-items:center;gap:12px">
             <span style="font-size:18px">📺</span>
             <div>
               <span style="font-weight:500;font-size:14px">{yt_analysis.get('channel','')}</span>
@@ -441,45 +489,29 @@ def build_morning_html(
                style="margin-left:auto;font-size:12px;color:#4ca3ff;text-decoration:none">Watch ↗</a>
           </div>
           <div style="padding:12px 14px">
-            <p style="margin:0 0 10px;font-size:13px;font-style:italic;color:#2C2C2A;line-height:1.6">
+            <div style="font-size:13px;font-weight:500;color:#2C2C2A;margin-bottom:6px">
+              {yt_analysis.get("title","")}
+            </div>
+            <p style="margin:0 0 8px;font-size:13px;color:#2C2C2A;line-height:1.65">
               {yt_analysis.get("summary","")}
             </p>
-            {f'<p style="margin:0 0 10px;font-size:13px;color:#1D9E75"><strong>Week outlook:</strong> {week_outlook}</p>' if week_outlook else ""}
+            {f'<p style="margin:0 0 8px;font-size:13px;color:#1D9E75"><strong>This week:</strong> {week_outlook}</p>' if week_outlook else ""}
+            {kp_html}
+            {levels_html}
+            {tsent_html}
+            {action_html}
             {pt_table}
             {cr_table}
           </div>
         </div>"""
 
-    # ── Transcript appendix ────────────────────────────────────────────────
+    # Transcript appendix removed — AI summary + key points cover the content
     transcripts_html = ""
-    for yt in (yt_analyses or []):
-        transcript = yt.get("transcript", "")
-        if not transcript:
-            continue
-        words  = transcript.split()
-        chunks = [" ".join(words[i:i+300]) for i in range(0, len(words), 300)]
-        chunk_html = "".join(
-            f'<p style="margin:0 0 12px;line-height:1.7">{c}</p>'
-            for c in chunks
-        )
-        transcripts_html += f"""
-        <div style="margin-bottom:24px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
-          <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;
-                      display:flex;align-items:center;gap:8px">
-            <span style="font-size:16px">📄</span>
-            <span style="font-weight:500;font-size:14px">Full Transcript — {yt.get('channel','')}</span>
-            <em style="font-weight:400;font-size:13px;color:#5F5E5A">"{yt.get('title','')}"</em>
-            <span style="margin-left:auto;font-size:11px;color:#888">{len(words):,} words</span>
-          </div>
-          <div style="padding:16px;font-size:12px;color:#2C2C2A;
-                      font-family:Georgia,serif;line-height:1.8;
-                      max-height:500px;overflow-y:auto;background:#FAFAF8">
-            {chunk_html}
-          </div>
-        </div>"""
 
     # ── Expected move section ──────────────────────────────────────────────
     em_section_html = format_em_html(em_data or {})
+
+    gumshoe_html = format_gumshoe_html(gumshoe) if gumshoe else ""
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -495,11 +527,11 @@ def build_morning_html(
 {em_section_html}
 {narrative_html}
 {yt_sections_html}
+{gumshoe_html}
 {earn_html}
 {watchlist_section}
 {gaps_section}
 {news_section}
-{transcripts_html}
 <div style="border-top:0.5px solid #D3D1C7;padding-top:12px;margin-top:8px;font-size:11px;color:#888">
   Pre-market data is low-volume and may not reflect open prices.
   Wait for 9:50 AM opening report before executing.
@@ -520,6 +552,7 @@ def build_morning_text(
     em_data: dict = None,
     futures_snap: list = None,
     top_headline: dict = None,
+    gumshoe: list = None,
 ) -> str:
     spy_gap = market_overview.get("spy", {}).get("gap_pct", 0)
     qqq_gap = market_overview.get("qqq", {}).get("gap_pct", 0)
@@ -682,6 +715,23 @@ def run():
     except Exception as e:
         logger.warning(f"YouTube fetch failed: {e}")
 
+    # ── StockGumshoe newsletter intelligence (last 3 days) ─────────────────
+    gumshoe_analyses = []
+    try:
+        logger.info("Fetching StockGumshoe analysis...")
+        gumshoe_analyses = fetch_gumshoe_analysis(
+            portfolio_symbols = list(symbol_account.keys()),
+            signal_log        = signal_log,
+            portfolio_value   = total_value,
+        ) or []
+        if gumshoe_analyses:
+            logger.info(
+                f"StockGumshoe: {len(gumshoe_analyses)} article(s) — "
+                f"{', '.join(a.get('main_ticker','?') for a in gumshoe_analyses if a.get('main_ticker'))}"
+            )
+    except Exception as e:
+        logger.warning(f"StockGumshoe fetch failed: {e}")
+
     # ── News sentiment ─────────────────────────────────────────────────────
     # Fetch news for: active signals + all held positions (capped at 12 total)
     # Do NOT gate on signal_log — on first run it's empty and we'd get no news.
@@ -776,6 +826,7 @@ def run():
         news_data, earnings_alerts, morning_narrative, total_value,
         yt_analyses=yt_analyses, em_data=em_data,
         futures_snap=futures_snap, top_headline=top_headline,
+        gumshoe=gumshoe_analyses,
     )
     text_report = build_morning_text(
         today_str, market_ov, active_signals, gap_alerts,

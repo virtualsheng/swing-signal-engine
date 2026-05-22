@@ -1,84 +1,46 @@
 """
-signals/ai_engine.py — Ollama AI grading + market narrative
-─────────────────────────────────────────────────────────────
-Performance-optimised version:
+signals/ai_engine.py — AI grading + narratives for swing signal engine
+───────────────────────────────────────────────────────────────────────
+Provider priority (auto-fallback):
+  1. Gemini (gemini-2.0-flash-lite) — free 1,500 req/day
+  2. Groq  (qwen3-32b)              — free 14,400 req/day
+  3. Ollama (local)                 — offline fallback
 
-  TIMEOUT reduced 60s → 25s   (qwen3:8b responds in 5-12s normally)
-  grade_swing_setup() caches by symbol — same symbol in Rollover IRA
-    AND Roth IRA only calls Ollama once, reuses result for second account
-  generate_signal_narrative() batches ALL signals into ONE Ollama call
-    instead of one call per symbol — biggest speed win
-  generate_market_narrative() unchanged (one call, fast enough)
-
-Typical run time with these changes:
-  Before: ~4-8 min (34 symbols, 3 accounts, serial narrative calls)
-  After:  ~1-2 min (cached grades, batched narratives, lower timeout)
+Set in .env:
+  GEMINI_API_KEY=AIza...   # aistudio.google.com
+  GROQ_API_KEY=gsk_...     # console.groq.com
 """
 
-import json
 import logging
-import requests
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from llm_router import llm_call, llm_call_text, llm_available, llm_provider_status
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL   = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen3:8b"
-TIMEOUT      = 25   # reduced from 60 — qwen3:8b responds in 5-12s normally
-
-# ── Grade cache — keyed by symbol, shared across all accounts ─────────────
-# Prevents re-grading the same symbol when it appears in multiple accounts
+# ── Grade cache — keyed by symbol, shared across all accounts ─────────────────
 _grade_cache: dict[str, dict] = {}
 
 
-def _ollama(prompt: str, expect_json: bool = True):
-    try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=TIMEOUT,
-        )
-        if resp.status_code != 200:
-            return None
-        raw = resp.json().get("response", "").strip()
-        if not expect_json:
-            return raw
-        # Strip markdown code fences
-        if "```" in raw:
-            parts = raw.split("```")
-            raw = parts[1] if len(parts) > 1 else parts[0]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        return json.loads(raw.strip())
-    except Exception as e:
-        logger.debug(f"Ollama call failed: {e}")
-        return None
-
-
 def clear_grade_cache():
-    """Call once at the start of each run to reset cross-account dedup cache."""
     _grade_cache.clear()
 
 
 def check_ollama_available() -> bool:
-    """
-    Check if Ollama is running and responsive.
-    First call after cold start can take 30-45s while model loads.
-    Uses 60s for this check only; all subsequent calls use TIMEOUT=25s.
-    """
-    for attempt in range(2):
-        try:
-            resp = requests.post(
-                OLLAMA_URL,
-                json={"model": OLLAMA_MODEL, "prompt": "hi", "stream": False},
-                timeout=60,
-            )
-            if resp.status_code == 200:
-                logger.info("Ollama: ready")
-                return True
-        except Exception as e:
-            logger.debug(f"Ollama check attempt {attempt+1} failed: {e}")
-    logger.warning("Ollama: unavailable — running in fallback mode")
-    return False
+    """Backward-compatible name — checks ANY provider (Gemini/Groq/Ollama)."""
+    status = llm_provider_status()
+    order  = status["active_order"]
+    for p in order:
+        s = status[p]
+        mark = "✓" if s["configured"] else "–"
+        logger.info(f"  {mark} {p.upper():<8} {s['model']}")
+    available = llm_available()
+    logger.info(
+        f"AI: {'ready — ' + ' → '.join(order) if available else 'unavailable — fallback mode'}"
+    )
+    return available
 
 
 def grade_swing_setup(
@@ -95,11 +57,7 @@ def grade_swing_setup(
     recent_prices: list,
     portfolio_value: float = 750_000,
 ) -> dict:
-    """
-    Grade a swing setup 0.0–1.0. Caches by symbol so the same symbol
-    in multiple accounts only calls Ollama once per run.
-    """
-    # Return cached result if this symbol was already graded this run
+    """Grade a swing trade setup. Caches by symbol across accounts."""
     if symbol in _grade_cache:
         logger.debug(f"    {symbol}: using cached grade")
         return _grade_cache[symbol]
@@ -120,22 +78,20 @@ Recent 10 closes: [{price_str}]
   "size_mult": <0.5|1.0|1.5|2.0>
 }}"""
 
-    result = _ollama(prompt)
+    result = llm_call(prompt, expect_json=True, timeout=20, tag=f"grade/{symbol}")
 
     if result and "confidence" in result:
-        confidence = round(float(result.get("confidence", 0.6)), 3)
         out = {
-            "confidence": confidence,
-            "action":     result.get("action", signal),
-            "reasoning":  result.get("reasoning", ""),
+            "confidence": round(float(result.get("confidence", 0.6)), 3),
+            "action":     str(result.get("action", signal)),
+            "reasoning":  str(result.get("reasoning", "")),
             "size_mult":  float(result.get("size_mult", 1.0)),
         }
     else:
-        # Fallback: use conviction as proxy
         out = {
             "confidence": round(conviction / 100.0, 2),
             "action":     signal,
-            "reasoning":  "Fallback — Ollama unavailable or timed out.",
+            "reasoning":  "Fallback — AI unavailable.",
             "size_mult":  1.0,
         }
 
@@ -143,35 +99,9 @@ Recent 10 closes: [{price_str}]
     return out
 
 
-def generate_signal_narrative(
-    symbol: str,
-    signal: str,
-    action: str,
-    confidence: float,
-    conviction: int,
-    reasoning: str,
-    price: float,
-    suggested_size_usd: float,
-    portfolio_value: float,
-) -> str:
-    """
-    Generate a 1–2 sentence narrative for a single signal.
-    Note: call generate_all_narratives() instead when processing a full
-    account — it batches all signals into one Ollama call, much faster.
-    """
-    prompt = f"""{symbol} {signal} at ${price:.2f}. Conviction {conviction}/100. AI confidence {confidence:.0%}. {reasoning}
-Suggested size: ${suggested_size_usd:,.0f} of ${portfolio_value:,.0f} portfolio.
-Write 1-2 sentences for a retirement investor. Plain prose, no bullets."""
-
-    result = _ollama(prompt, expect_json=False)
-    return result.strip() if result else f"{symbol} {signal} signal — conviction {conviction}/100, AI confidence {confidence:.0%}."
-
-
 def generate_all_narratives(signals: list[dict], portfolio_value: float) -> dict[str, str]:
     """
-    Generate narratives for all actionable signals in small batches of 3.
-    Batching saves Ollama round-trips vs one-per-symbol while keeping
-    each call small enough that JSON parsing is reliable.
+    Generate narratives for all actionable signals in batches of 3.
     Returns {symbol: narrative_string}.
     """
     if not signals:
@@ -196,16 +126,15 @@ def generate_all_narratives(signals: list[dict], portfolio_value: float) -> dict
                 f"size=${size:,.0f} | {reason[:80]}"
             )
 
-        signals_text = "\n".join(lines)
         symbols_list = ", ".join(f'"{s.get("symbol","?")}"' for s in batch)
         prompt = f"""Write a 1-sentence narrative for each swing trade signal.
 Portfolio: ${portfolio_value:,.0f}. Plain prose. No bullets. No markdown.
 Return ONLY valid JSON with exactly these keys: {{{symbols_list}: "narrative"}}
 
 Signals:
-{signals_text}"""
+{chr(10).join(lines)}"""
 
-        result = _ollama(prompt, expect_json=True)
+        result = llm_call(prompt, expect_json=True, timeout=20, tag="narratives")
 
         if isinstance(result, dict):
             for s in batch:
@@ -213,22 +142,20 @@ Signals:
                 if sym in result and result[sym]:
                     all_narratives[sym] = str(result[sym]).strip()
                 else:
-                    # Fallback for this symbol
-                    all_narratives[sym] = (
-                        f"{sym} {s.get('signal','HOLD')} — "
-                        f"conviction {s.get('conviction',50)}/100, "
-                        f"AI {s.get('ai_confidence',0.6):.0%}."
-                    )
+                    all_narratives[sym] = _fallback_narrative(s)
         else:
-            # Whole batch failed — use fallback for all in batch
             for s in batch:
-                sym = s.get("symbol", "?")
-                all_narratives[sym] = (
-                    f"{sym} {s.get('signal','HOLD')} — "
-                    f"conviction {s.get('conviction',50)}/100."
-                )
+                all_narratives[s.get("symbol","?")] = _fallback_narrative(s)
 
     return all_narratives
+
+
+def _fallback_narrative(s: dict) -> str:
+    sym  = s.get("symbol", "?")
+    sig  = s.get("signal", "HOLD")
+    cv   = s.get("conviction", 50)
+    conf = s.get("ai_confidence", 0.6)
+    return f"{sym} {sig} — conviction {cv}/100, AI {conf:.0%}."
 
 
 def detect_market_regime(spy_closes: list[float]) -> dict:
@@ -242,36 +169,29 @@ def detect_market_regime(spy_closes: list[float]) -> dict:
     older      = closes[-10:-5]
     pct_change = (closes[-1] - closes[0]) / closes[0] * 100 if closes[0] else 0
 
-    # Simple volatility: avg daily range
     daily_changes = [
         abs((closes[i] - closes[i-1]) / closes[i-1] * 100)
         for i in range(1, len(closes))
     ]
     avg_daily_vol = sum(daily_changes) / len(daily_changes) if daily_changes else 0
-
     recent_avg = sum(recent) / len(recent)
     older_avg  = sum(older)  / len(older)
     trending   = abs(recent_avg - older_avg) / older_avg * 100 > 1.5 if older_avg else False
 
     if avg_daily_vol > 2.0:
-        regime = "volatile"
-        bias   = "bearish" if pct_change < 0 else "bullish"
+        regime = "volatile";        bias = "bearish" if pct_change < 0 else "bullish"
         desc   = f"High volatility ({avg_daily_vol:.1f}%/day avg)"
     elif trending and pct_change > 2:
-        regime = "trending"
-        bias   = "bullish"
+        regime = "trending";        bias = "bullish"
         desc   = f"Uptrend +{pct_change:.1f}% over {len(closes)} sessions"
     elif trending and pct_change < -2:
-        regime = "trending"
-        bias   = "bearish"
+        regime = "trending";        bias = "bearish"
         desc   = f"Downtrend {pct_change:.1f}% over {len(closes)} sessions"
     elif avg_daily_vol < 0.7:
-        regime = "low_volatility"
-        bias   = "neutral"
+        regime = "low_volatility";  bias = "neutral"
         desc   = f"Low volatility ({avg_daily_vol:.1f}%/day avg) — choppy/ranging"
     else:
-        regime = "ranging"
-        bias   = "neutral"
+        regime = "ranging";         bias = "neutral"
         desc   = f"Ranging market, {pct_change:+.1f}% over {len(closes)} sessions"
 
     return {
@@ -292,7 +212,7 @@ def generate_market_narrative(
     top_movers: list,
     report_type: str = "EOD",
 ) -> str:
-    """Generate a 3–5 sentence market summary for the EOD report."""
+    """Generate 3–5 sentence market summary for EOD report."""
     regime_str  = regime.get("regime", "unknown")
     bias        = regime.get("bias", "neutral")
     description = regime.get("description", "")
@@ -319,11 +239,10 @@ Top signals today:
 
 Plain prose. Professional tone. No bullets. Focus on what matters for tomorrow."""
 
-    result = _ollama(prompt, expect_json=False)
+    result = llm_call_text(prompt, timeout=20, tag="market_narrative")
     if result and len(result.strip()) > 30:
         return result.strip()
 
-    # Fallback
     return (
         f"Market is in a {regime_str} regime with {bias} bias. "
         f"SPY moved {sigs.get('pct_change_20d', 0):+.1f}% over the past 20 sessions "
