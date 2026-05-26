@@ -253,8 +253,12 @@ def _analyze_article(
     portfolio_k   = portfolio_value / 1000
     port_syms_str = ", ".join(portfolio_symbols[:20]) if portfolio_symbols else "none"
 
-    prompt = f"""You are analyzing a StockGumshoe article for a retirement investor.
-StockGumshoe identifies stocks teased in paid newsletters and evaluates the investment thesis.
+    prompt = f"""You are analyzing a StockGumshoe article. StockGumshoe's format is:
+1. A paid newsletter teases a stock with cryptic clues but hides the ticker
+2. StockGumshoe's author reads the clues and researches to REVEAL the actual ticker
+3. The author then evaluates whether the newsletter's thesis holds up
+
+Your job: extract exactly what StockGumshoe revealed and whether it's worth acting on.
 
 Article title: {title}
 
@@ -266,42 +270,64 @@ Full article content:
 Investor's current holdings: {port_syms_str}
 Portfolio value: ~${portfolio_k:.0f}k (retirement accounts — moderate risk tolerance)
 
-Provide a comprehensive analysis. Respond ONLY with valid JSON, no markdown:
+Respond ONLY with valid JSON, no markdown:
 {{
-  "main_ticker": "<primary stock ticker, or null if none>",
-  "tickers_mentioned": ["<TICKER1>", "<TICKER2>"],
-  "recommendation": "<buy|avoid|watch|neutral>",
-  "thesis_summary": "<3-4 sentences: what is the newsletter claiming, what does StockGumshoe think, and what is the actual company/sector>",
-  "detailed_analysis": "<4-5 sentences: expand on the investment thesis, key risks, why the newsletter is promoting this, historical context if available, and whether the fundamentals support the thesis>",
+  "revealed_ticker": "<the specific ticker StockGumshoe identified as the answer — this is the KEY field. If explicitly stated in the article, extract it. If hinted at but not stated, your best guess. null only if truly no ticker is identifiable>",
+  "revealed_company": "<full company name that was revealed>",
+  "ticker_confidence": "<confirmed|likely|uncertain> — confirmed if stated outright, likely if strongly implied, uncertain if still vague>",
+  "newsletter_name": "<which newsletter is being sleuthed, e.g. 'Oxford Club', 'Stansberry', 'Palm Beach Letter'>",
+  "newsletter_claim": "<2-3 sentences: what wild claim does the newsletter make about this stock? e.g. '1000% gains', 'secret energy play', 'AI monopoly'>",
+  "gumshoe_verdict": "<2-3 sentences: what is StockGumshoe's actual conclusion after sleuthing? Does he think the thesis holds up or is it hype? Quote or closely paraphrase his conclusion>",
+  "why_promoted": "<1 sentence: why is this newsletter promoting this stock now — what's the hook?>",
+  "actual_thesis": "<2-3 sentences: what is the REAL investment case for this company, stripped of newsletter hype? What do they actually do and why might it be interesting?>",
+  "main_ticker": "<same as revealed_ticker, or best known ticker if company has multiple listings>",
+  "tickers_mentioned": ["<all tickers explicitly mentioned in the article>"],
+  "recommendation": "<buy|avoid|watch|neutral> — based on StockGumshoe's verdict, not the newsletter's claim>",
   "risk_level": "<speculative|moderate|conservative>",
-  "risk_factors": ["<risk1>", "<risk2>"],
+  "risk_factors": ["<specific risk 1>", "<specific risk 2>"],
+  "sector": "<sector/industry of the revealed company>",
+  "catalyst": "<the specific catalyst or event driving the newsletter pitch, or null>",
+  "price_target": <float if mentioned, else null>,
   "time_horizon": "<days|weeks|months|years>",
-  "price_target": <float or null>,
-  "catalyst": "<specific catalyst mentioned, or null>",
-  "sector": "<sector/industry>",
-  "in_your_portfolio": ["<tickers you already hold>"],
-  "position_suggestion": "<2 sentences: specific sizing advice referencing the ${portfolio_k:.0f}k portfolio, e.g. limit to 1-2% ($x-$x) given speculative nature, or avoid entirely>",
-  "newsletter_bias": "<bullish|bearish|neutral>",
-  "gumshoe_verdict": "<2 sentences: StockGumshoe's actual conclusion — is this legitimate or promotional hype?>",
-  "action_items": ["<concrete action 1>", "<concrete action 2>"]
+  "in_your_portfolio": ["<tickers from above that the investor already holds>"],
+  "position_suggestion": "<2 sentences: if worth acting on, specific size for a ${portfolio_k:.0f}k retirement portfolio. Most newsletter picks are speculative — be honest about position sizing.>",
+  "action_items": ["<specific action 1 e.g. 'Research {ticker} fundamentals before buying'>", "<action 2>"]
 }}
 
-Rules:
-- thesis_summary and detailed_analysis MUST be specific to this article
-- For speculative small-caps: recommend no more than 1-2% of portfolio
-- For established names: normal position sizing applies
-- gumshoe_verdict should reflect what StockGumshoe's editorial stance actually is
-- If the article is a "microblog" or teaser, note that explicitly"""
+Critical rules:
+- revealed_ticker is THE most important field — extract it even if you have to infer from company name, description, or sector clues in the article
+- If the article says something like "the company is {name}" or "{name} (ticker: XXX)" — that IS the reveal
+- newsletter_claim should capture the hype verbatim — the outrageous promise is what StockGumshoe is evaluating
+- gumshoe_verdict should be skeptical and specific — StockGumshoe is usually cautious about newsletter picks
+- For retirement accounts: speculative small-caps should be max 1-2% of portfolio"""
 
     result = llm_call(prompt, expect_json=True, timeout=45, tag="gumshoe/analyze")
 
-    if result and result.get("thesis_summary") and len(result["thesis_summary"]) > 30:
-        # Clean and validate
+    if result and (result.get("gumshoe_verdict") or result.get("actual_thesis") or result.get("thesis_summary")):
+        # Normalise — new prompt uses different field names, support both
+        if not result.get("thesis_summary"):
+            result["thesis_summary"] = result.get("actual_thesis", "")
+        if not result.get("detailed_analysis"):
+            result["detailed_analysis"] = (
+                f"Newsletter claim: {result.get('newsletter_claim', '')} "
+                f"Newsletter: {result.get('newsletter_name', 'unknown')}."
+            )
+        # Prefer revealed_ticker over main_ticker
+        if result.get("revealed_ticker") and not result.get("main_ticker"):
+            result["main_ticker"] = result["revealed_ticker"]
+        elif result.get("revealed_ticker"):
+            result["main_ticker"] = result["revealed_ticker"]   # always prefer revealed
+
+        # Clean tickers
         result["tickers_mentioned"] = [
             t.upper() for t in result.get("tickers_mentioned", [])
             if isinstance(t, str) and 1 <= len(t.strip()) <= 6
         ]
-        # Add any regex-found tickers AI missed
+        # Ensure revealed ticker is in the list
+        rt = result.get("revealed_ticker")
+        if rt and rt.upper() not in result["tickers_mentioned"]:
+            result["tickers_mentioned"].insert(0, rt.upper())
+        # Add regex-found tickers AI missed
         for t in regex_tickers:
             if t not in result["tickers_mentioned"]:
                 result["tickers_mentioned"].append(t)
@@ -312,8 +338,12 @@ Rules:
         result["signal_alignment"] = _cross_reference(
             result["tickers_mentioned"], signal_log
         )
-        logger.info(f"  AI analysis complete: {result.get('main_ticker','?')} | "
-                    f"{result.get('recommendation','?')} | {result.get('risk_level','?')}")
+        ticker_conf = result.get("ticker_confidence", "uncertain")
+        logger.info(
+            f"  AI sleuthed: {result.get('revealed_ticker','?')} "
+            f"({ticker_conf}) | {result.get('recommendation','?')} | "
+            f"{result.get('risk_level','?')}"
+        )
         return result
 
     # Fallback: structured data from regex + descriptive text
@@ -461,12 +491,17 @@ def format_gumshoe_html(analyses: list[dict]) -> str:
 
     sections = []
     for analysis in analyses:
-        ticker      = analysis.get("main_ticker") or "?"
+        ticker          = analysis.get("revealed_ticker") or analysis.get("main_ticker") or "?"
+        ticker_conf     = analysis.get("ticker_confidence", "uncertain")
+        revealed_company= analysis.get("revealed_company", "")
+        newsletter_name = analysis.get("newsletter_name", "")
+        newsletter_claim= analysis.get("newsletter_claim", "")
+        actual_thesis   = analysis.get("actual_thesis", analysis.get("thesis_summary", ""))
         title       = analysis.get("title", "")
         url         = analysis.get("url", "#")
         rec         = analysis.get("recommendation", "watch").lower()
         risk        = analysis.get("risk_level", "moderate")
-        thesis      = analysis.get("thesis_summary", "")
+        thesis      = analysis.get("thesis_summary", actual_thesis)
         detailed    = analysis.get("detailed_analysis", "")
         verdict     = analysis.get("gumshoe_verdict", "")
         position    = analysis.get("position_suggestion", "")
@@ -547,6 +582,47 @@ def format_gumshoe_html(analyses: list[dict]) -> str:
             f'<span style="color:#888;font-size:11px;margin-left:8px">{sector}</span>'
         ) if sector and sector != "unknown" else ""
 
+        # Confidence badge for the revealed ticker
+        conf_color = {"confirmed": "#1D9E75", "likely": "#BA7517", "uncertain": "#888"}.get(ticker_conf, "#888")
+        conf_label = {"confirmed": "✓ confirmed", "likely": "~ likely", "uncertain": "? uncertain"}.get(ticker_conf, "?")
+
+        # Newsletter claim block (the hype)
+        claim_html = ""
+        if newsletter_claim:
+            nl_label = f" ({newsletter_name})" if newsletter_name else ""
+            claim_html = f'''
+            <div style="margin-bottom:10px;padding:8px 12px;background:#FFF8ED;
+                        border-radius:6px;border-left:3px solid #FAC775">
+              <div style="font-size:11px;font-weight:500;color:#854F0B;margin-bottom:3px">
+                📢 NEWSLETTER CLAIM{nl_label}
+              </div>
+              <div style="font-size:12px;color:#633806;line-height:1.55;font-style:italic">
+                "{newsletter_claim}"
+              </div>
+            </div>'''
+
+        # Revealed ticker hero block
+        ticker_hero = ""
+        if ticker and ticker != "?":
+            company_line = f"<div style='font-size:11px;color:#5F5E5A;margin-top:2px'>{revealed_company}</div>" if revealed_company else ""
+            ticker_hero = f'''
+            <div style="margin-bottom:12px;padding:10px 14px;background:#E1F5EE;
+                        border-radius:8px;border:1px solid #9FE1CB;
+                        display:flex;align-items:center;gap:12px">
+              <div style="text-align:center;min-width:64px">
+                <div style="font-size:22px;font-weight:600;color:#085041">{ticker}</div>
+                <div style="font-size:10px;color:{conf_color};font-weight:500">{conf_label}</div>
+              </div>
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:500;color:#085041">
+                  🔍 StockGumshoe identified this as the newsletter's pick
+                </div>
+                {company_line}
+              </div>
+              <span style="padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;
+                           color:#fff;background:{rec_color}">{rec.upper()}</span>
+            </div>'''
+
         sections.append(f"""
     <div style="margin-bottom:20px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
       <div style="background:#F1EFE8;padding:10px 14px;border-bottom:0.5px solid #D3D1C7;
@@ -562,28 +638,29 @@ def format_gumshoe_html(analyses: list[dict]) -> str:
       <div style="padding:12px 14px">
 
         <a href="{url}" target="_blank"
-           style="font-size:14px;font-weight:500;color:#2C2C2A;text-decoration:none;
+           style="font-size:13px;color:#5F5E5A;text-decoration:none;
                   display:block;margin-bottom:10px;line-height:1.4">
           {title}
         </a>
 
+        {ticker_hero}
+        {claim_html}
+
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-          <span style="padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;
-                       color:#fff;background:{rec_color}">{rec.upper()}</span>
           <span style="padding:3px 10px;border-radius:4px;font-size:12px;
-                       color:{risk_color};border:0.5px solid {risk_color}">{risk}</span>
-          <span style="padding:3px 10px;border-radius:4px;font-size:12px;
-                       color:{bias_color};border:0.5px solid {bias_color}">{bias}</span>
-          {target_html}{sector_html}
+                       color:{risk_color};border:0.5px solid {risk_color}">{risk} risk</span>
+          {f'<span style="padding:3px 8px;border-radius:4px;font-size:12px;color:#888;border:0.5px solid #D3D1C7">{sector}</span>' if sector and sector != "unknown" else ""}
+          {target_html}
         </div>
 
         <div style="font-size:13px;color:#2C2C2A;line-height:1.65;margin-bottom:8px">
-          {thesis}
+          <strong style="color:#2C2C2A">Real thesis:</strong> {actual_thesis or thesis}
         </div>
 
-        <div style="font-size:12px;color:#5F5E5A;line-height:1.6;margin-bottom:8px;
-                    padding:8px 12px;background:#FAFAF8;border-radius:6px;border-left:3px solid #D3D1C7">
-          {detailed}
+        <div style="margin-top:8px;font-size:12px;color:#5F5E5A;font-style:italic;
+                    padding:8px 12px;border-left:3px solid #1D9E75;background:#FAFAF8;
+                    border-radius:0 6px 6px 0">
+          <strong style="color:#0F6E56">StockGumshoe verdict:</strong> {verdict}
         </div>
 
         {catalyst_html}
@@ -592,11 +669,6 @@ def format_gumshoe_html(analyses: list[dict]) -> str:
         <div style="margin-top:10px;padding:8px 12px;background:#F7F5EE;
                     border-radius:6px;font-size:12px;color:#2C2C2A">
           <strong>📊 Position sizing:</strong> {position}
-        </div>
-
-        <div style="margin-top:8px;font-size:12px;color:#5F5E5A;font-style:italic;
-                    padding:6px 10px;border-left:2px solid #1D9E75;background:#FAFAF8">
-          <strong>StockGumshoe verdict:</strong> {verdict}
         </div>
 
         {f'<div style="margin-top:8px;font-size:12px;font-weight:500;color:#5F5E5A">Action items:</div>{action_html}' if action_items else ''}
