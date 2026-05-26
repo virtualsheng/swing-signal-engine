@@ -39,15 +39,19 @@ CACHE_TTL_M = 10
 # (premarket_label, close_label, premarket_ticker, close_ticker)
 # premarket: use futures contracts directly — cash indices don't update pre-market
 # close:     use cash index levels — more accurate for EOD reporting
+# (premarket_label, close_label, premarket_ticker, close_ticker, cash_index_ticker)
+# cash_index_ticker: for index futures (YM=F, ES=F, NQ=F), use the CASH index's
+# prior close as the baseline — this matches how CNBC calculates futures change.
+# For commodities/crypto (no cash index), set to None → falls back to own prev close.
 FUTURES_TICKERS = [
-    ("DOW FUT",  "DOW",      "YM=F",    "^DJI"),
-    ("S&P FUT",  "S&P 500",  "ES=F",    "^GSPC"),
-    ("NAS FUT",  "NASDAQ",   "NQ=F",    "^IXIC"),
-    ("OIL",      "OIL",      "CL=F",    "CL=F"),
-    ("US 10-YR", "US 10-YR", "^TNX",    "^TNX"),
-    ("GOLD",     "GOLD",     "GC=F",    "GC=F"),
-    ("SILVER",   "SILVER",   "SI=F",    "SI=F"),
-    ("BITCOIN",  "BITCOIN",  "BTC-USD", "BTC-USD"),
+    ("DOW FUT",  "DOW",      "YM=F",    "^DJI",     "^DJI"),
+    ("S&P FUT",  "S&P 500",  "ES=F",    "^GSPC",    "^GSPC"),
+    ("NAS FUT",  "NASDAQ",   "NQ=F",    "^IXIC",    "^IXIC"),
+    ("OIL",      "OIL",      "CL=F",    "CL=F",     None),
+    ("US 10-YR", "US 10-YR", "^TNX",    "^TNX",     None),
+    ("GOLD",     "GOLD",     "GC=F",    "GC=F",     None),
+    ("SILVER",   "SILVER",   "SI=F",    "SI=F",     None),
+    ("BITCOIN",  "BITCOIN",  "BTC-USD", "BTC-USD",  None),
 ]
 
 
@@ -63,6 +67,29 @@ def _save_cache(cache: dict):
     os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
     with open(CACHE_FILE, "w") as f:
         json.dump(cache, f)
+
+
+def _fetch_cash_prev(cash_index: str) -> float | None:
+    """
+    Fetch the prior regular-session close of a cash index (^DJI, ^GSPC, ^IXIC).
+    This is what CNBC uses as the baseline for futures change calculations.
+    Falls back to None if unavailable (caller uses futures own prev_close instead).
+    """
+    try:
+        info = yf.Ticker(cash_index).fast_info
+        prev = (
+            getattr(info, "regularMarketPreviousClose", None) or
+            getattr(info, "previous_close",             None)
+        )
+        if prev:
+            return float(prev)
+        # Fallback: last 2 days of daily history
+        hist = yf.Ticker(cash_index).history(period="2d", interval="1d")
+        if len(hist) >= 2:
+            return float(hist["Close"].iloc[-2])
+    except Exception as e:
+        logger.debug(f"_fetch_cash_prev({cash_index}): {e}")
+    return None
 
 
 def _fetch_one(ticker: str, mode: str = "premarket") -> tuple[float | None, float | None]:
@@ -138,7 +165,7 @@ def get_futures_snapshot(force: bool = False, mode: str = "premarket") -> list[d
             pass
 
     results = []
-    for premarket_label, close_label, premarket_ticker, close_ticker in FUTURES_TICKERS:
+    for premarket_label, close_label, premarket_ticker, close_ticker, cash_index in FUTURES_TICKERS:
         label  = close_label if mode == "close" else premarket_label
         ticker = close_ticker if mode == "close" else premarket_ticker
         price, prev = _fetch_one(ticker, mode=mode)
@@ -147,6 +174,16 @@ def get_futures_snapshot(force: bool = False, mode: str = "premarket") -> list[d
         fallback_ticker = premarket_ticker if mode == "close" else close_ticker
         if price is None and fallback_ticker != ticker:
             price, prev = _fetch_one(fallback_ticker, mode=mode)
+
+        # CNBC method: for index futures, use the CASH index's prior 4 PM close
+        # as the baseline instead of the futures contract's own prior settlement.
+        # Futures trade 24/7 so their "prev_close" includes overnight moves —
+        # comparing ES=F to its own 5 PM settlement makes the change look wrong.
+        if cash_index and mode == "premarket":
+            cash_prev = _fetch_cash_prev(cash_index)
+            if cash_prev:
+                prev = cash_prev
+                logger.debug(f"  {label}: using cash index {cash_index} prev close {cash_prev:.2f}")
 
         entry = {
             "label":         label,

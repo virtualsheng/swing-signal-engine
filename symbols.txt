@@ -13,48 +13,49 @@
 # ─────────────────────────────────────────────────────────────────────────────
  
 # Rollover IRA (ETFs)
-DBC
-DBMF
-DRAM
-EWJV
-EWT
-EWY
-GDE
-GDMN
-GLDM
-GRID
-IBIT
-NANR
-PSLV
-QQQM
-REMX
-SLVP
 SMH
 SPMO
+DBMF
+DRAM
+GRID
+QQQM
+GDE
+NANR
+DBC
+EWT
+VLUE
 UFO
 URA
+GLDM
+PSLV
+EWY
+EWJV
+REMX
+GDMN
+SLVP
 URNM
-VLUE
+IBIT
 
 # Roth IRA (stocks)
-AG
-AMAT
-ARIS
-GEV
-JPM
-LRCX
-MU
-NVDA
-PAAS
-PLTR
-RKLB
-SNDK
 TSM
+NVDA
+MU
+AMAT
+SNDK
+RKLB
+JPM
+GEV
+LRCX
+PLTR
+ARIS
+AG
+PAAS
 
 # HSA (ETFs)
-AVUV
-GDE
 VUG
+SPMO
+GDE
+AVUV
 
 # 401(k) — monitored but no signals generated
 # JLGMX

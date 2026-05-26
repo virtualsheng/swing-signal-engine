@@ -48,7 +48,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signals.data_fetcher       import fetch_batch
 from signals.signal_engine      import get_technical_signal
 from signals.portfolio          import load_portfolio, get_tradeable_accounts
-from signals.expected_move      import get_expected_move
 from signals.market_futures     import (
     get_futures_snapshot, get_top_headline,
     format_futures_text, format_futures_html,
@@ -112,7 +111,6 @@ def build_prelim_html(
     act_now:      list,
     watch:        list,
     holds:        list,
-    em_lines:     list,
     market_snap:  list,
     top_headline: dict,
     now_str:      str,
@@ -124,36 +122,7 @@ def build_prelim_html(
     if market_snap:
         market_bar_html = format_futures_html(market_snap, top_headline or {})
 
-    # ── Expected move block ────────────────────────────────────────────────
     em_html = ""
-    if em_lines:
-        rows = "".join(
-            f'<tr style="border-top:0.5px solid #E8E6DF">'
-            f'<td style="padding:6px 10px;font-weight:500">{r["sym"]}</td>'
-            f'<td style="padding:6px 10px">${r["price"]:.2f}</td>'
-            f'<td style="padding:6px 10px;color:#1D9E75">±${r["daily_em"]:.2f} ({r["daily_em_pct"]:.1f}%)</td>'
-            f'<td style="padding:6px 10px;color:#888">${r["daily_lower"]:.2f} – ${r["daily_upper"]:.2f}</td>'
-            f'<td style="padding:6px 10px;font-size:11px;color:#888">{r.get("expiry","")}</td>'
-            f'</tr>'
-            for r in em_lines
-        )
-        em_html = f"""
-        <div style="margin-bottom:16px;border:0.5px solid #D3D1C7;border-radius:8px;overflow:hidden">
-          <div style="background:#F1EFE8;padding:8px 14px;border-bottom:0.5px solid #D3D1C7">
-            <span style="font-weight:500;font-size:13px">Options Implied Expected Move</span>
-            <span style="color:#888;font-size:11px;margin-left:8px">ATM straddle × 0.68</span>
-          </div>
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:#F7F5EE">
-              <th style="padding:5px 10px;font-weight:400;color:#5F5E5A;font-size:11px">Symbol</th>
-              <th style="padding:5px 10px;font-weight:400;color:#5F5E5A;font-size:11px">Price</th>
-              <th style="padding:5px 10px;font-weight:400;color:#5F5E5A;font-size:11px">Daily EM</th>
-              <th style="padding:5px 10px;font-weight:400;color:#5F5E5A;font-size:11px">Range</th>
-              <th style="padding:5px 10px;font-weight:400;color:#5F5E5A;font-size:11px">Expiry</th>
-            </tr></thead>
-            <tbody>{rows}</tbody>
-          </table>
-        </div>"""
 
     # ── Signal table builder ───────────────────────────────────────────────
     def signal_rows(items: list) -> str:
@@ -293,7 +262,6 @@ def build_prelim_text(
     act_now:      list,
     watch:        list,
     holds:        list,
-    em_lines:     list,
     market_snap:  list,
     top_headline: dict,
     now_str:      str,
@@ -312,14 +280,6 @@ def build_prelim_text(
     if top_headline.get("title"):
         lines += [f"  📰 {top_headline['title']}", ""]
 
-    # EM
-    for r in em_lines:
-        lines.append(
-            f"  {r['sym']:6} ±${r['daily_em']:.2f} ({r['daily_em_pct']:.1f}%)"
-            f"  [${r['daily_lower']:.2f} – ${r['daily_upper']:.2f}]"
-        )
-    if em_lines:
-        lines.append("")
 
     # ACT NOW
     if act_now:
@@ -439,23 +399,6 @@ def run():
     watch.sort(key=lambda x: x["conviction"], reverse=True)
     logger.info(f"ACT NOW: {len(act_now)} | WATCH: {len(watch)} | HOLD: {len(holds)}")
 
-    # ── Expected move (SPY + QQQ) ──────────────────────────────────────────
-    em_lines = []
-    for sym in ("SPY", "QQQ"):
-        try:
-            em = get_expected_move(sym)
-            if em:
-                em_lines.append({
-                    "sym":          sym,
-                    "price":        em.get("price", 0),
-                    "daily_em":     em.get("daily_em", 0),
-                    "daily_em_pct": em.get("daily_em_pct", 0),
-                    "daily_lower":  em.get("daily_lower", 0),
-                    "daily_upper":  em.get("daily_upper", 0),
-                    "expiry":       em.get("nearest_expiry", ""),
-                })
-        except Exception:
-            pass
 
     # ── Build subject ──────────────────────────────────────────────────────
     now_str   = datetime.now().strftime("%I:%M %p")
@@ -474,11 +417,11 @@ def run():
 
     # ── Build and deliver ──────────────────────────────────────────────────
     html_body = build_prelim_html(
-        act_now, watch, holds, em_lines,
+        act_now, watch, holds,
         market_snap, top_headline, now_str, total_value,
     )
     text_body = build_prelim_text(
-        act_now, watch, holds, em_lines,
+        act_now, watch, holds,
         market_snap, top_headline, now_str,
     )
 
