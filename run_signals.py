@@ -321,4 +321,49 @@ def run(report_type: str = "EOD"):
     logger.info(f"\n{text_report}")
     logger.info(f"Delivering: {action_count} actionable signals across all accounts")
     deliver_report(subject, html_report, text_report)
+
+    # Rich Discord EOD summary embed (only on EOD run, not premarket)
+    if report_type == "EOD":
+        try:
+            from notifications.discord import send_eod_summary
+            _buy_sigs, _sell_sigs, _hold_sigs = [], [], []
+            for _acct_sigs in all_signals_by_account.values():
+                for _s in _acct_sigs:
+                    if _s.get("blocked_by"):
+                        continue
+                    _entry = {
+                        "symbol":    _s["symbol"],
+                        "account":   _s.get("account_name", ""),
+                        "conviction":_s.get("conviction", 0),
+                        "price":     _s.get("price", 0),
+                        "reason":    _s.get("reason","")[:70],
+                    }
+                    sig = _s.get("signal","")
+                    if "BUY"  in sig: _buy_sigs.append(_entry)
+                    elif "SELL" in sig: _sell_sigs.append(_entry)
+                    else: _hold_sigs.append(_entry)
+
+            _spy_chg = 0.0
+            _qqq_chg = 0.0
+            try:
+                import yfinance as _yf
+                _spy_chg = float(_yf.Ticker("SPY").fast_info.get("regularMarketChangePercent", 0) or 0)
+                _qqq_chg = float(_yf.Ticker("QQQ").fast_info.get("regularMarketChangePercent", 0) or 0)
+            except Exception:
+                pass
+
+            send_eod_summary(
+                today_str    = today_str,
+                spy_chg      = _spy_chg,
+                qqq_chg      = _qqq_chg,
+                vix          = float(regime.get("vix", 0)) if isinstance(regime, dict) else 0.0,
+                buy_signals  = _buy_sigs,
+                sell_signals = _sell_sigs,
+                hold_signals = _hold_sigs,
+                narrative    = market_narrative[:400] if market_narrative else "",
+                total_value  = float(total_value or 0),
+            )
+        except Exception as _de:
+            logger.debug(f"Discord EOD summary skipped: {_de}")
+
     logger.info(f"Done. Log: {_log_file}")

@@ -433,6 +433,39 @@ def run():
 
     logger.info(f"\n{text_report}")
     deliver_report(subject, html_report, text_report)
+
+    # Rich Discord BUY alert per confirmed EXECUTE NOW signal
+    if execute_list:
+        try:
+            from notifications.discord import send_buy_alert
+            _today = today_str
+            for conf in execute_list:
+                sym  = conf.get("symbol", "")
+                acct = conf.get("account", "")
+                # Look up signal details from signal_log
+                _sig  = signal_log.get(f"{acct}:{sym}", signal_log.get(sym, {}))
+                _sc   = _sig.get("scorecard", {})
+                send_buy_alert(
+                    symbol        = sym,
+                    account       = acct,
+                    signal        = _sig.get("signal", "BUY"),
+                    conviction    = int(_sig.get("conviction", 0)),
+                    price         = float(conf.get("entry_price", _sig.get("price", 0))),
+                    entry_price   = float(conf.get("entry_price", _sig.get("price", 0))),
+                    stop_price    = float(conf.get("stop_price",  0)),
+                    target_price  = float(conf.get("target_price", 0)),
+                    suggested_usd = float(_sig.get("suggested_usd", 0)),
+                    rsi           = float(_sc.get("rsi", _sig.get("rsi", 50))),
+                    vol_ratio     = float(_sc.get("vol_ratio", 1.0)),
+                    above_sma50   = bool(_sc.get("above_sma50", True)),
+                    above_sma200  = bool(_sc.get("above_sma200", True)),
+                    ai_reasoning  = str(_sig.get("ai_reasoning", ""))[:200],
+                    narrative     = str(_sig.get("narrative", ""))[:200],
+                    today_str     = _today,
+                )
+        except Exception as _de:
+            logger.debug(f"Discord BUY alert skipped: {_de}")
+
     logger.info(f"Opening report done. {exec_count} trades to execute. Log: {_log_file}")
 
 
