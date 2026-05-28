@@ -77,12 +77,16 @@ def send_telegram(message: str):
 
 
 def send_discord(message: str) -> bool:
-    """Send plain-text message to Discord webhook."""
     try:
         from notifications.discord import send_discord_message
-        return send_discord_message(message)
+        success = send_discord_message(message)
+        if success:
+            logger.info("Discord message sent")
+        else:
+            logger.warning("Discord send failed (invalid webhook or network issue)")
+        return success
     except Exception as e:
-        logger.debug(f"Discord send skipped: {e}")
+        logger.warning(f"Discord send error: {e}")
         return False
 
 
