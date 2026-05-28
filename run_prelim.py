@@ -427,6 +427,37 @@ def run():
 
     logger.info(f"Sending: {subject}")
     deliver_report(subject, html_body, text_body)
+
+    # Rich Discord SELL alert — only if there are SELL signals at 3:50 PM
+    _sell_at_prelim = [e for e in act_now if "SELL" in e.get("signal","")]
+    if _sell_at_prelim:
+        try:
+            from notifications.discord import send_prelim_sell_alert
+            _snap  = market_snap or []
+            _spy_c = next((f.get("chg_val",0) for f in _snap if f.get("label","")=="S&P 500"), 0)
+            _qqq_c = next((f.get("chg_val",0) for f in _snap if "NAS" in f.get("label","")), 0)
+            _vix_v = next((f.get("price",0)   for f in _snap if "10-YR" in f.get("label","") or
+                           f.get("label","").startswith("VIX")), 0)
+            send_prelim_sell_alert(
+                sell_signals = [
+                    {"symbol":     e["symbol"],
+                     "account":    e.get("account",""),
+                     "signal":     e.get("signal","SELL"),
+                     "conviction": e.get("conviction", 0),
+                     "price":      e.get("price", 0),
+                     "chg_1d":     e.get("chg_1d", 0),
+                     "rsi":        e.get("rsi", 50),
+                     "reason":     e.get("reason",""),
+                    } for e in _sell_at_prelim
+                ],
+                today_str = TODAY_STR,
+                spy_chg   = float(_spy_c),
+                qqq_chg   = float(_qqq_c),
+                vix       = float(_vix_v),
+            )
+        except Exception as _de:
+            logger.debug(f"Discord SELL alert skipped: {_de}")
+
     logger.info("Done.")
 
 

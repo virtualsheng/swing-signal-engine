@@ -76,11 +76,27 @@ def send_telegram(message: str):
             logger.error(f"Telegram error: {e}")
 
 
+def send_discord(message: str) -> bool:
+    """Send plain-text message to Discord webhook."""
+    try:
+        from notifications.discord import send_discord_message
+        return send_discord_message(message)
+    except Exception as e:
+        logger.debug(f"Discord send skipped: {e}")
+        return False
+
+
 def deliver_report(
     subject: str,
     html_report: str,
     text_report: str,
 ):
-    """Send report via all configured channels."""
+    """Send report via all configured channels: email, Telegram, Discord."""
     send_email(subject, html_report, text_report)
     send_telegram(text_report)
+    # Discord: strip HTML tags, trim to 1900 chars
+    import re
+    _plain = re.sub(r"<[^>]+>", "", text_report)
+    _plain = re.sub(r"\n{3,}", "\n\n", _plain).strip()
+    _discord_msg = f"**{subject}**\n\n{_plain}"[:1900]
+    send_discord(_discord_msg)

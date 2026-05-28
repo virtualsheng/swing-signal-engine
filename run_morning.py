@@ -844,6 +844,27 @@ def run():
 
     logger.info(f"\n{text_report}")
     deliver_report(subject, html_report, text_report)
+
+    # Rich Discord morning embed (structured, mobile-friendly)
+    try:
+        from notifications.discord import send_morning_alert
+        _spy  = market_ov.get("spy", {})
+        _qqq  = market_ov.get("qqq", {})
+        _vix  = market_ov.get("vix", {}).get("level", 0)
+        _futs = format_futures_text(futures_snap).splitlines() if futures_snap else []
+        send_morning_alert(
+            today_str      = today_str,
+            spy_pct        = float(_spy.get("gap_pct", 0)),
+            qqq_pct        = float(_qqq.get("gap_pct", 0)),
+            vix            = float(_vix),
+            futures_lines  = _futs,
+            active_signals = active_signals,
+            top_headline   = top_headline or "",
+            narrative      = morning_narrative or "",
+        )
+    except Exception as _de:
+        logger.debug(f"Discord morning alert skipped: {_de}")
+
     logger.info(f"Morning report done. Log: {_log_file}")
 
 
