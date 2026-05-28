@@ -14,14 +14,20 @@ DISCORD_WEBHOOK_URL in .env:
   https://discord.com/api/webhooks/{id}/{token}
 """
 
+import logging
 import os
+import sys
 import requests
+
+from dotenv import load_dotenv
+load_dotenv()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 
 def _valid_url(url: str) -> bool:
-    return bool(url) and "discord.com/api/webhooks/" in url
+    return bool(url) and url.startswith("https://discordapp.com/api/webhooks/")
 
 
 def send_discord_message(message: str, webhook_url: str = None) -> bool:
