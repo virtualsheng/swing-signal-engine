@@ -1,266 +1,198 @@
-# Swing Signal Engine
+# swing-signal-engine
 
-Daily signal engine. Generates BUY/SELL/HOLD signals with AI grading, news sentiment, YouTube channel analysis, and options expected move data. Sends three daily reports by email and Telegram. No automated order execution — all trades are placed manually.
+> **v0.1.0** — Daily swing trading signal engine for retirement accounts. Generates BUY/SELL/HOLD signals across 4 accounts using technical analysis, AI grading, news sentiment, YouTube channel monitoring, and options expected move data. Sends reports via email, Telegram, and Discord. No automated order execution — all trades placed manually.
 
-> **Intraday ORB trading** is handled by the separate [`trading-bot/`](../trading-bot) project.
+> Intraday ORB trading is handled by the companion [trading-bot](https://github.com/virtualsheng/trading-bot) project.
 
 ---
 
 ## Daily workflow
 
 | Time (ET) | Script | Purpose |
-|---|---|---|
-| 4:15 PM | `run_eod.py` | ★ Source of truth — technical signals for all symbols |
-| 7:30 AM | `run_morning.py` | Overnight intelligence — news, gaps, YouTube, EM |
-| 9:50 AM | `run_opening.py` | **Your trade list** — confirmed entries with levels |
+|-----------|--------|---------|
+| 4:15 PM | `run_eod.py` | ★ Source of truth — EOD signals for all symbols |
+| 7:30 AM | `run_morning.py` | Pre-market intelligence — futures, news, YouTube, EM |
+| 9:50 AM | `run_opening.py` | **Your trade list** — opening range confirmation with entry/stop/target |
+| 3:50 PM | `run_prelim.py` | Pre-close SELL alert — 10-minute action window |
 
 ---
 
 ## Accounts
 
-| Account | Value | Type | Signal mode |
-|---|---|---|---|
-| Rollover IRA | $000 | ETFs | Full signals — min conviction 65 |
-| Roth IRA | $000 | Stocks | Full signals — min conviction 70 (higher threshold, tax-free growth) |
-| HSA | $000 | ETFs | Full signals — min conviction 65 |
-| 401(k) | $000 | Mutual funds | Monitor only — no signals |
+| Account | Type | Signal threshold |
+|---------|------|-----------------|
+| Rollover IRA | ETFs | Full signals — min conviction 65 |
+| Roth IRA | Stocks | Full signals — min conviction 70 (higher bar, tax-free growth) |
+| HSA | ETFs | Full signals — min conviction 65 |
+| 401(k) | Mutual funds | Monitor only — no signals generated |
 
 ---
 
-## EOD Report (4:15 PM)
+## EOD Report (4:15 PM) — `run_eod.py`
 
-The source of truth. Runs after market close on official closing prices.
+The source of truth. Runs on official closing prices after market close.
 
 **What it produces:**
-- BUY/SELL/HOLD signal per symbol across all three tradeable accounts
-- AI grading via Ollama (skips low-conviction HOLDs for speed — only actionable signals go through Ollama)
-- Full technical scorecard per symbol: EMA 2/3/5, RSI(14), MACD, SMA50/200, ATR, volume ratio, 52-week range position, 1d/5d/20d price changes
-- Portfolio dashboard: today's estimated P&L per account
-- AI market narrative (Ollama-generated 4–6 sentence commentary)
-- Concentration warnings: flags if a BUY signal would push a symbol past 10–15% of account
-- Position sizing per account: conviction-tiered % of account × AI confidence multiplier
-- Signals saved to `cache/signal_log.json` for morning reports to read
+- BUY/SELL/HOLD signal per symbol across all tradeable accounts
+- AI grading via Ollama/Gemini/Groq — confidence, reasoning, size multiplier
+- Full technical scorecard per symbol: EMA 2/3/5, RSI(14), MACD, SMA50/200, ATR, vol ratio, 52-week range position, 1d/5d/20d price changes
+- Portfolio dashboard: estimated P&L per account today
+- AI market narrative: 4–6 sentence commentary on market regime and outlook
+- Concentration warnings: flags if a BUY would push a symbol past 10–15% of account
+- Position sizing: conviction-tiered % of account × AI confidence multiplier
+- Signals saved to `cache/signal_log.json` for morning reports
 
-**Not the trade list** — the market is closed. These signals set up tomorrow's trades.
+**Not the trade list** — market is closed. These signals set up tomorrow's entries.
 
 ---
 
-## Morning Report (7:30 AM)
+## Morning Report (7:30 AM) — `run_morning.py`
 
 Overnight intelligence before you execute anything.
 
 **What it produces:**
-- Pre-market SPY/QQQ moves and VIX level
-- Options implied expected move for SPY and QQQ (ATM straddle × 0.68)
-- AI-generated morning briefing (Ollama): overall market tone, what to watch at open
-- YouTube channel analysis (see below)
-- Today's watchlist: active EOD signals from last night with pre-market context and news sentiment
-- Pre-market moves for your holdings (genuine pre-market quotes only — not closing prices)
+- Pre-market futures snapshot: DOW, S&P 500, Nasdaq, Oil, 10-yr yield, Gold, Silver, Bitcoin
+- Options implied expected move for SPY and QQQ (ATM straddle × 0.68 = 1σ daily move)
+- AI morning briefing: market tone and what to watch at open
+- Today's watchlist: active EOD signals with pre-market gap context
+- Pre-market price moves for current holdings (uses `ticker.history(prepost=True)` — `fast_info.pre_market_price` was silently returning None and has been removed)
 - News sentiment per active-signal symbol (Yahoo Finance RSS + AI grading)
-- Earnings alerts: symbols with earnings within 48h (BUY signals blocked)
-- Full transcript appended at the bottom for each YouTube video
-
-**Reading material** — trade confirmations arrive at 9:50 AM.
-
----
-
-## Opening Report (9:50 AM) — Your Trade List
-
-After the first 15 minutes of real price action have printed.
-
-**For each active EOD signal:**
-
-| Action | Meaning |
-|---|---|
-| **EXECUTE NOW** | Signal confirmed by opening action. Entry price, stop, and 2:1 target included. |
-| **WAIT** | Signal present but not yet confirmed. Specific level to watch. |
-| **STAND DOWN** | Opening action invalidates the signal. Skip today. |
-
-Email subject line tells you immediately: `SWING SIGNAL: Opening 10:50 — EXECUTE: IBIT, PSLV`
+- Earnings alerts: BUY signals blocked for symbols with earnings within 48h
+- YouTube channel analysis: new video summaries, bias, price levels, portfolio cross-reference
+- Discord embed: structured mobile-friendly summary with futures, watchlist, top headline
 
 ---
 
-## YouTube channel analysis
+## Opening Report (9:50 AM) — `run_opening.py`
 
-Monitors channels for new videos and extracts market signals.
+Your trade list. Run after the first 15 minutes of price action.
 
-For each video:
-- Summary from video description (no AI required — instant)
-- Bias from title keyword analysis
-- Price levels extracted via regex: support, resistance, expected ranges, targets
-- Expected move language detected: "752 to the upside, 725 to the downside"
-- Portfolio cross-reference: which of your symbols were mentioned and whether they align or conflict with your EOD signals
-- Full transcript appended to morning email (scrollable text box)
-- Optional: set `ANTHROPIC_API_KEY` in `.env` for Claude-powered analysis (~$0.002/video, ~5s vs 30s+ with Ollama)
+For each active EOD signal:
 
-No API key required for basic operation. Uses YouTube RSS feed + `youtube-transcript-api`.
+| Verdict | Meaning |
+|---------|---------|
+| **EXECUTE NOW** | Opening range confirms the signal. Entry price, stop, and 2:1 target provided. Place a limit order. |
+| **WAIT** | Signal present but opening action not yet confirming. Specific level to watch. Check again at noon. |
+| **STAND DOWN** | Opening action invalidates the signal. Skip today entirely. |
 
-```bash
-pip install youtube-transcript-api
-```
+Email subject: `SWING SIGNAL: Opening 09:50 — EXECUTE: IBIT, PSLV`
+
+Discord BUY alert fires per EXECUTE NOW signal with full trade levels: entry, stop, target, R:R, suggested position size, RSI, vol ratio, SMA position.
 
 ---
 
-## Options implied expected move
+## 3:50 PM Preliminary SELL Alert — `run_prelim.py`
 
-Fetched for SPY and QQQ each morning.
+Runs 10 minutes before market close. Fires only if SELL/STRONG_SELL signals are present.
 
-```
-Expected Move = ATM straddle price × 0.68   (1 standard deviation)
-```
-
-Appears in the morning report alongside SPY/QQQ pre-market data:
-```
-OPTIONS IMPLIED EXPECTED MOVE
-SPY  $583.20  daily EM ±$8.40 (1.4%)  lower $574.80  upper $591.60
-QQQ  $500.10  daily EM ±$7.20 (1.4%)  lower $492.90  upper $507.30
-              weekly EM ±$14.40       lower $485.70  upper $514.50
-```
+- Near-close prices — same technical engine as EOD
+- Does NOT overwrite `signal_log.json`
+- No AI grading (too slow for 10-minute window)
+- Flags signals that changed since yesterday's EOD
+- Discord SELL embed fires immediately with conviction, price, RSI, intraday change
 
 ---
 
-## Signal cross-reference
+## Discord notifications
 
-Conflicts are highlighted in both the EOD and morning reports:
+| Event | Time | Alert type |
+|-------|------|-----------|
+| Morning summary | 7:30 AM | Futures + watchlist embed — compact, mobile-readable |
+| Confirmed BUY | 9:50 AM | Per EXECUTE NOW signal — entry, stop, target, R:R, size |
+| SELL alert | 3:50 PM | Fires only if SELL signals present |
+| EOD summary | 4:15 PM | All BUY/SELL signals for tomorrow + AI commentary |
 
-```
-SMH    HOLD  cv=42  ← aligned with FOM caution
-NVDA   BUY   cv=83  ← CONFLICT — FOM says "wait, needs to consolidate"
-GDE    HOLD  cv=47  ← aligned
-```
-
----
-
-## Symbols and portfolio
-
-**`symbols.txt`** — your full watchlist, organized by account section. Signals are generated for all symbols whether or not you currently hold them (so you can get BUY signals on things you want to add).
-
-```
-# Rollover IRA (ETFs)
-DBMF
-SMH
-...
-
-# Roth IRA (stocks)
-NVDA
-AMAT
-...
-```
-
-**`portfolio.json`** — current holdings (shares, avg cost, unrealized P&L). Used for position context only — not for signal generation.
-
-**Update portfolio after a trade:**
-```bash
-python update_portfolio.py Portfolio_Positions_DATE.csv   # from Brokerage export
-python update_portfolio.py                                # auto-finds latest CSV
-python update_portfolio.py --dry-run                      # preview only
-```
+All reports also delivered via email (HTML) and Telegram (plain text).
 
 ---
 
-## Technical signals
+## Technical signal engine
 
-Each symbol gets a full scorecard:
+8-indicator scorecard per symbol, producing a net conviction score (0–100).
 
-| Indicator | What's checked |
-|---|---|
-| EMA 2/3/5 | Crossover + alignment (bull/bear) |
-| RSI(14) | Level + label (neutral/overbought/oversold) |
-| MACD | Crossover + histogram direction |
-| SMA 50/200 | Price position + distance % |
-| Volume ratio | vs 20-day average |
-| ATR(14) | Daily volatility % |
-| 52-week range | Position as % of range |
-| 1d/5d/20d | Price change % |
-| Bull/bear score | Net score driving BUY/SELL/HOLD |
+| Indicator | Bullish condition |
+|-----------|-----------------|
+| EMA 2/3/5 alignment | EMA2 > EMA3 > EMA5 |
+| EMA cross | Recent bull cross |
+| RSI(14) | 45–65 range (extremes reduce conviction) |
+| MACD crossover | MACD line above signal |
+| MACD histogram | Positive and rising |
+| SMA50 | Price above |
+| SMA200 | Price above |
+| Volume ratio | > 1.5× confirming, < 0.6× warning |
+
+Signal thresholds:
+- `STRONG_BUY`: net score ≥ 4, RSI 45–70, above both SMAs
+- `BUY`: net score ≥ 2, RSI not extreme, sufficient volume
+- `HOLD`: mixed signals
+- `SELL` / `STRONG_SELL`: mirrored bear conditions
+
+---
+
+## AI stack
+
+| Task | Provider | When |
+|------|----------|------|
+| Setup grading | Gemini → Groq → Ollama | EOD per symbol (cached across accounts) |
+| Market narrative | Gemini → Groq → Ollama | EOD + Morning |
+| Trade narrative | Gemini → Groq → Ollama | EOD per signal (batched 3 at a time) |
+| Market regime | Gemini → Groq → Ollama | EOD |
+| YouTube analysis | Ollama or Claude (optional) | Morning per new video |
+
+All AI is additive — signals generate correctly without any AI configured. Ollama timeout reduced (25s), grade cache shared across accounts, narratives batched to prevent re-grading the same symbol.
 
 ---
 
 ## Position sizing
 
-Conviction-tiered, per account value:
+```
+suggested_usd = account_value × conviction_tier × ai_confidence_multiplier
+```
 
-| Conviction | Base % of account |
-|---|---|
-| 90+ | 7% |
-| 80+ | 5% |
-| 70+ | 3% |
-| < 70 | 2% |
+| Conviction tier | Allocation |
+|----------------|-----------|
+| STRONG (score ≥ 4.5) | 8–12% of account |
+| High (score ≥ 3.5) | 5–8% |
+| Moderate (score ≥ 2.5) | 3–5% |
+| Low (score < 2.5) | 1–3% |
 
-Multiplied by AI confidence (0.7× to 1.5×). Concentration warnings fire if a position would exceed 10–15% of account.
+Entry blocked if: cooldown active (60 days after SELL), near earnings (48h), concentration limit exceeded.
 
 ---
 
-## Account rules
+## Portfolio management
 
-| Account | Min conviction | AI min confidence | Cooldown |
-|---|---|---|---|
-| Rollover IRA | 65 | 55% | 60 days |
-| Roth IRA | 70 | 65% | 90 days |
-| HSA | 65 | 55% | 60 days |
+`portfolio.json` — current positions with shares, avg cost, unrealized P&L. Updated automatically by `python update_portfolio.py` with a CSV export. `auto_update_portfolio.py` auto-detects and applies any newer CSV on startup.
 
-Sell cooldown prevents re-entering a position too soon after selling. Force-sell override bypasses cooldown when conviction ≥ 85 and AI confirms SELL.
-
----
-
-## Setup
-
-### Prerequisites
-
-- Python 3.12
-- [Ollama](https://ollama.com) — running locally (`qwen3:8b`)
-- Gmail account with App Password (for email delivery)
-- Brokerage account (for manual trade execution)
-
-### Install
-
-```bash
-git clone https://github.com/virtualsheng/swing-signal-engine.git
-cd swing_signal_engine
-
-py -3.12 -m venv venv
-venv\Scripts\activate
-
-pip install pandas numpy python-dotenv yfinance requests
-pip install youtube-transcript-api
-```
-
-### Configure
-
-```bash
-copy .env.template .env
-# Fill in EMAIL_*, TELEGRAM_*, PORTFOLIO_VALUE
-```
-
-### Windows Task Scheduler — 3 tasks
-
-| Time | Command |
-|---|---|
-| 4:15 PM | `python C:\path\run_eod.py` |
-| 7:30 AM | `python C:\path\run_morning.py` |
-| 9:50 AM | `python C:\path\run_opening.py` |
+Portfolio values are computed live from `shares × today's live price` rather than stale stored values.
 
 ---
 
 ## Environment variables
 
 ```env
-# Email (required for reports)
+# Email
 EMAIL_SENDER=you@gmail.com
-EMAIL_PASSWORD=your_gmail_app_password
+EMAIL_PASSWORD=your_16_char_gmail_app_password
 EMAIL_RECIPIENT=you@example.com
 
-# Telegram (optional)
-TELEGRAM_BOT_TOKEN=your_token
-TELEGRAM_CHAT_ID=your_chat_id
+# Telegram
+TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+TELEGRAM_CHAT_ID=987654321
 
-# Anthropic API (optional — faster YouTube analysis ~$0.002/video)
-ANTHROPIC_API_KEY=sk-ant-...
+# Discord
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
-# Portfolio
-PORTFOLIO_VALUE=753814
+# AI (all optional — graceful fallback without)
+GEMINI_API_KEY=AIza...          # aistudio.google.com — free
+GROQ_API_KEY=gsk_...            # console.groq.com — free
+OLLAMA_MODEL=qwen3:4b           # local fallback
+ANTHROPIC_API_KEY=sk-ant-...    # optional: Claude for YouTube analysis
+
+# Signal thresholds
 SWING_MIN_CONVICTION=65
 SWING_FORCE_SELL_CONVICTION=85
+SWING_COOLDOWN_DAYS=60
 ```
 
 ---
@@ -270,52 +202,62 @@ SWING_FORCE_SELL_CONVICTION=85
 ```
 swing_signal_engine/
 ├── run_eod.py              # ★ 4:15 PM — EOD signals
-├── run_morning.py          # ★ 7:30 AM — morning intelligence
-├── run_opening.py          # ★ 9:50 AM — trade list
-├── update_portfolio.py     # Import positions from Fidelity CSV
+├── run_morning.py          # ★ 7:30 AM — pre-market intelligence
+├── run_opening.py          # ★ 9:50 AM — opening confirmation + trade list
+├── run_prelim.py           # ★ 3:50 PM — pre-close SELL alert
+├── run_signals.py          # Account-aware signal runner (EOD + pre-market modes)
+├── update_portfolio.py     # Import from CSV export
 │
 ├── signals/
-│   ├── ai_engine.py        # Ollama: grading, regime, narrative
-│   ├── data_fetcher.py     # Yahoo Finance daily bars + cache
-│   ├── earnings_filter.py  # Earnings calendar (Yahoo Finance)
-│   ├── expected_move.py    # Options implied expected move (SPY/QQQ)
-│   ├── news_fetcher.py     # Yahoo Finance RSS headlines + sentiment
-│   ├── opening_range.py    # 9:50 AM opening range confirmation
-│   ├── portfolio.py        # Position sizing, cooldown, account config
-│   ├── premarket_data.py   # Pre-market quotes, VIX, gap detection
-│   ├── report_builder.py   # HTML + text report generation
-│   ├── signal_engine.py    # Full technical scorecard per symbol
+│   ├── signal_engine.py    # 8-indicator technical scorecard
+│   ├── ai_engine.py        # Gemini/Groq/Ollama grading + narratives
+│   ├── data_fetcher.py     # Yahoo Finance daily bars + 2h cache
+│   ├── market_futures.py   # Futures snapshot (history() — not fast_info)
+│   ├── opening_range.py    # 9:50 AM ORB confirmation
+│   ├── portfolio.py        # Sizing, cooldown, account config
+│   ├── report_builder.py   # HTML + plain-text report generation
+│   ├── news_fetcher.py     # Yahoo Finance RSS + AI sentiment
+│   ├── earnings_filter.py  # Earnings calendar (blocks BUY signals)
+│   ├── expected_move.py    # Options ATM straddle (SPY/QQQ)
+│   ├── premarket_data.py   # Pre-market quotes (history prepost=True)
 │   └── youtube_fetcher.py  # YouTube RSS + transcript + signal extraction
 │
 ├── notifications/
-│   └── notifier.py         # Email + Telegram delivery
+│   ├── notifier.py         # Email + Telegram + Discord delivery
+│   └── discord.py          # Rich embeds: morning, BUY, SELL, EOD
 │
-├── cache/                  # Auto-generated, not committed
-│   ├── signal_log.json     # Latest EOD signals (read by morning/opening)
-│   ├── price_cache.json    # Daily bar cache
-│   ├── news_cache.json     # News sentiment cache (2h TTL)
-│   ├── youtube_cache.json  # Video analysis cache (per video ID)
-│   └── sell_history.json   # Cooldown tracking per account:symbol
-│
-├── symbols.txt             # ★ Your watchlist by account
-├── portfolio.json          # ★ Current holdings (update via update_portfolio.py)
+├── symbols.txt             # ★ Watchlist by account section
+├── portfolio.json          # ★ Current holdings
 ├── .env                    # Credentials — never commit
-├── .env.template
-└── README.md
+└── .env.template
 ```
 
 ---
 
-## All email subjects use the prefix `SWING SIGNAL:` for filtering
+## Schedule setup (Windows Task Scheduler)
 
 ```
-SWING SIGNAL: EOD 2026-05-16 — 12 signals for tomorrow
-SWING SIGNAL: Morning Intel 2026-05-16 — SPY -1.1% | 12 signals to watch
-SWING SIGNAL: Opening 2026-05-16 10:50 — EXECUTE: IBIT, PSLV
+4:15 PM  →  python run_eod.py
+7:30 AM  →  python run_morning.py
+9:50 AM  →  python run_opening.py
+3:50 PM  →  python run_prelim.py
+```
+
+---
+
+## Email subject format
+
+All emails use `SWING SIGNAL:` prefix for easy inbox filtering:
+
+```
+SWING SIGNAL: EOD 2026-05-29 — 8 actions
+SWING SIGNAL: Morning Intel 2026-05-29 — SPY +0.7% | 6 signals to watch
+SWING SIGNAL: Opening 2026-05-29 09:50 — EXECUTE: IBIT, SMH
+SWING SIGNAL: PRELIM 3:50 PM — ACT NOW: NVDA | WATCH: AMAT
 ```
 
 ---
 
 ## Disclaimer
 
-For educational and research purposes only. Not financial advice. Always verify signals before executing in Fidelity. Past performance does not guarantee future results.
+For educational and research purposes only. Not financial advice. Always verify signals before executing. Past performance does not guarantee future results.
